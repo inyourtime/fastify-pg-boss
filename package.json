@@ -1,7 +1,7 @@
 {
   "name": "fastify-pg-boss",
   "version": "0.1.0",
-  "description": "Fastify plugin for pg-boss with lifecycle, queue, worker, and schedule registration.",
+  "description": "Fastify plugin that wires pg-boss into your app lifecycle with typed queues, schedules, and workers.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -27,13 +27,29 @@
   },
   "keywords": [
     "fastify",
+    "fastify-plugin",
     "pg-boss",
+    "pgboss",
     "postgres",
+    "postgresql",
     "queue",
-    "jobs"
+    "job-queue",
+    "jobs",
+    "background-jobs",
+    "worker",
+    "scheduler",
+    "cron"
   ],
-  "author": "",
+  "author": "inyourtime <inyourtimeguy@gmail.com>",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/inyourtime/fastify-pg-boss.git"
+  },
+  "bugs": {
+    "url": "https://github.com/inyourtime/fastify-pg-boss/issues"
+  },
+  "homepage": "https://github.com/inyourtime/fastify-pg-boss#readme",
   "engines": {
     "node": ">=22.12.0"
   },
