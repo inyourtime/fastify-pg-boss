@@ -1,0 +1,54 @@
+{
+  "name": "fastify-pg-boss",
+  "version": "0.1.0",
+  "description": "Fastify plugin for pg-boss with lifecycle, queue, worker, and schedule registration.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "npm run clean && tsc -p tsconfig.build.json",
+    "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\"",
+    "db:down": "docker compose down -v --remove-orphans",
+    "db:up": "docker compose up -d --wait postgres",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run typecheck && npm run build && c8 --100 node --test"
+  },
+  "keywords": [
+    "fastify",
+    "pg-boss",
+    "postgres",
+    "queue",
+    "jobs"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "peerDependencies": {
+    "fastify": "^5.0.0",
+    "pg-boss": "^12.15.0"
+  },
+  "dependencies": {
+    "fastify-plugin": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.15",
+    "c8": "^11.0.0",
+    "fastify": "^5.8.4",
+    "pg-boss": "^12.15.0",
+    "pino": "^10.3.1",
+    "typescript": "^6.0.2"
+  }
+}

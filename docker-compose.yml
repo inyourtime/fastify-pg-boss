@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: fastify_pg_boss
+      POSTGRES_PASSWORD: fastify_pg_boss
+      POSTGRES_USER: fastify_pg_boss
+    ports:
+      - "55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fastify_pg_boss -d fastify_pg_boss"]
+      interval: 1s
+      timeout: 5s
+      retries: 30
