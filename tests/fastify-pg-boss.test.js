@@ -202,6 +202,91 @@ test('worker definitions can access the fastify instance during registration and
   assert.deepEqual(result.jobs[0].data, { hello: 'fastify' })
 })
 
+test('worker object handlers receive the fastify instance', async (t) => {
+  const app = Fastify({ logger: false })
+  t.after(() => app.close())
+  const schema = createSchemaName()
+  const queue = `${schema}/direct-fastify-aware`
+
+  let resolveProcessed
+  const processed = new Promise((resolve) => {
+    resolveProcessed = resolve
+  })
+
+  await app.register(fastifyPgBoss, {
+    constructorOptions: {
+      connectionString,
+      schema,
+    },
+    workers: [
+      definePgBossWorker({
+        name: 'direct-fastify-aware-worker',
+        queue,
+        createQueue: true,
+        options: {
+          pollingIntervalSeconds: 0.5,
+        },
+        async handler(jobs, handlerApp) {
+          resolveProcessed({ handlerApp, jobs })
+        },
+      }),
+    ],
+  })
+
+  const jobId = await getPgBoss(app).send(queue, { source: 'direct-handler' })
+  const result = await waitFor(processed, 10_000, 'worker object handler did not receive fastify')
+
+  assert.equal(typeof jobId, 'string')
+  assert.equal(result.handlerApp, app)
+  assert.equal(result.jobs.length, 1)
+  assert.equal(result.jobs[0].name, queue)
+  assert.deepEqual(result.jobs[0].data, { source: 'direct-handler' })
+})
+
+test('plugin skips disabled workers and disabled worker schedules', async (t) => {
+  const app = Fastify({ logger: false })
+  t.after(() => app.close())
+  const schema = createSchemaName()
+  const disabledWorkerQueue = `${schema}/disabled-worker`
+  const disabledScheduleQueue = `${schema}/disabled-schedule`
+
+  await app.register(fastifyPgBoss, {
+    constructorOptions: {
+      connectionString,
+      schema,
+    },
+    workers: [
+      definePgBossWorker({
+        enabled: false,
+        name: 'disabled-worker',
+        queue: disabledWorkerQueue,
+        createQueue: true,
+        async handler() {},
+      }),
+      definePgBossWorker({
+        name: 'disabled-schedule-worker',
+        queue: disabledScheduleQueue,
+        createQueue: true,
+        schedule: {
+          cron: '0 8 * * *',
+          enabled: false,
+          key: 'disabled',
+        },
+        async handler() {},
+      }),
+    ],
+  })
+
+  const boss = getPgBoss(app)
+  const disabledWorkerQueueResult = await boss.getQueue(disabledWorkerQueue)
+  const disabledScheduleQueueResult = await boss.getQueue(disabledScheduleQueue)
+  const disabledSchedules = await boss.getSchedules(disabledScheduleQueue, 'disabled')
+
+  assert.equal(disabledWorkerQueueResult, null)
+  assert.equal(disabledScheduleQueueResult?.name, disabledScheduleQueue)
+  assert.equal(disabledSchedules.length, 0)
+})
+
 test('supports the cron string worker schedule shortcut', async (t) => {
   const app = Fastify({ logger: false })
   t.after(() => app.close())
