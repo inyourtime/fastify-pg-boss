@@ -18,6 +18,7 @@ import {
   registerQueue,
   registerSchedule,
   registerWorker,
+  resolveWorkerDefinition,
 } from '../dist/lifecycle.js'
 import {
   assertDatabaseAvailable,
@@ -87,10 +88,25 @@ test('definition helpers return the provided definitions', () => {
   const queue = { name: 'queue', retryLimit: 1 }
   const schedule = { cron: '* * * * *', name: 'queue' }
   const worker = { async handler() {}, name: 'queue' }
+  const workerFactory = () => worker
 
   assert.equal(definePgBossQueue(queue), queue)
   assert.equal(definePgBossSchedule(schedule), schedule)
   assert.equal(definePgBossWorker(worker), worker)
+  assert.equal(definePgBossWorker(workerFactory), workerFactory)
+})
+
+test('resolves worker definition factories with the fastify instance', async (t) => {
+  const app = Fastify({ logger: false })
+  t.after(() => app.close())
+  const worker = { async handler() {}, name: 'queue' }
+  const workerFactory = (fastify) => {
+    assert.equal(fastify, app)
+    return worker
+  }
+
+  assert.equal(resolveWorkerDefinition(app, worker), worker)
+  assert.equal(resolveWorkerDefinition(app, workerFactory), worker)
 })
 
 test('createBoss supports every constructor path against postgres and rejects missing configuration', async (t) => {
@@ -216,14 +232,22 @@ test('registers queues, schedules, and workers against postgres across branches'
   const plainWorkerQueue = `${schema}/plain-worker`
   const scheduledWorkerQueue = `${schema}/scheduled-worker`
   const metadataQueue = `${schema}/metadata-queue`
+  const fastifyMetadataQueue = `${schema}/fastify-metadata-queue`
+  const app = Fastify({ logger: false })
   let resolvePlainWorker
   let resolveMetadataWorker
+  let resolveFastifyMetadataWorker
   const plainWorkerJobs = new Promise((resolve) => {
     resolvePlainWorker = resolve
   })
   const metadataWorkerJobs = new Promise((resolve) => {
     resolveMetadataWorker = resolve
   })
+  const fastifyMetadataWorkerJobs = new Promise((resolve) => {
+    resolveFastifyMetadataWorker = resolve
+  })
+
+  t.after(() => app.close())
 
   await registerQueue(boss, stringQueue)
   await registerQueue(boss, { name: objectQueue, retryLimit: 2 })
@@ -231,6 +255,7 @@ test('registers queues, schedules, and workers against postgres across branches'
   await registerQueue(boss, keyedScheduleQueue)
   await registerQueue(boss, plainWorkerQueue)
   await registerQueue(boss, scheduledWorkerQueue)
+  await registerQueue(boss, fastifyMetadataQueue)
   await registerSchedule(boss, {
     cron: '* * * * *',
     enabled: false,
@@ -274,6 +299,18 @@ test('registers queues, schedules, and workers against postgres across branches'
     queue: metadataQueue,
     queueOptions: { retryLimit: 5 },
   })
+  await registerWorker(
+    boss,
+    {
+      async handler(jobs, fastify) {
+        resolveFastifyMetadataWorker({ fastify, jobs })
+      },
+      includeMetadata: true,
+      name: 'fastify-metadata-worker',
+      queue: fastifyMetadataQueue,
+    },
+    app,
+  )
 
   const stringQueueResult = await boss.getQueue(stringQueue)
   const objectQueueResult = await boss.getQueue(objectQueue)
@@ -295,6 +332,7 @@ test('registers queues, schedules, and workers against postgres across branches'
 
   await boss.send(plainWorkerQueue, { plain: true })
   await boss.send(metadataQueue, { metadata: true })
+  await boss.send(fastifyMetadataQueue, { fastifyMetadata: true })
 
   const plainJobs = await waitFor(plainWorkerJobs, 10_000, 'plain worker did not process a job')
   const metadataJobs = await waitFor(
@@ -302,10 +340,18 @@ test('registers queues, schedules, and workers against postgres across branches'
     10_000,
     'metadata worker did not process a job',
   )
+  const fastifyMetadataJobs = await waitFor(
+    fastifyMetadataWorkerJobs,
+    10_000,
+    'fastify metadata worker did not process a job',
+  )
 
   assert.deepEqual(plainJobs[0]?.data, { plain: true })
   assert.equal(metadataJobs[0]?.state, 'active')
   assert.deepEqual(metadataJobs[0]?.data, { metadata: true })
+  assert.equal(fastifyMetadataJobs.fastify, app)
+  assert.equal(fastifyMetadataJobs.jobs[0]?.state, 'active')
+  assert.deepEqual(fastifyMetadataJobs.jobs[0]?.data, { fastifyMetadata: true })
 
   await closeWorkers(boss)
   await closeWorkers(boss, [
@@ -313,6 +359,7 @@ test('registers queues, schedules, and workers against postgres across branches'
     { async handler() {}, name: plainWorkerQueue, offWorkOnClose: false },
     { async handler() {}, name: scheduledWorkerQueue, offWorkOptions: { wait: true } },
     { async handler() {}, name: 'metadata-worker', queue: metadataQueue },
+    { async handler() {}, name: 'fastify-metadata-worker', queue: fastifyMetadataQueue },
   ])
 })
 

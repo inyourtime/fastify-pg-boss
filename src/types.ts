@@ -2,6 +2,8 @@ import { PgBoss } from 'pg-boss'
 import type {
   BamEvent,
   ConstructorOptions,
+  Job,
+  JobWithMetadata,
   OffWorkOptions,
   Queue,
   ScheduleOptions,
@@ -73,6 +75,16 @@ export type PgBossWorkerScheduleDefinition<Data extends object = object> =
       tz?: string
     }
 
+export type PgBossFastifyWorkHandler<ReqData, ResData = any> = (
+  jobs: Job<ReqData>[],
+  fastify: FastifyInstance,
+) => Promise<ResData>
+
+export type PgBossFastifyWorkWithMetadataHandler<ReqData, ResData = any> = (
+  jobs: JobWithMetadata<ReqData>[],
+  fastify: FastifyInstance,
+) => Promise<ResData>
+
 export type PgBossWorkerDefinition<ReqData extends object = object, ResData = any> = {
   createQueue?: boolean
   enabled?: boolean
@@ -97,15 +109,27 @@ export type PgBossWorkerDefinition<ReqData extends object = object, ResData = an
 } & (
   | {
       includeMetadata?: false
-      handler: WorkHandler<ReqData, ResData>
+      handler: WorkHandler<ReqData, ResData> | PgBossFastifyWorkHandler<ReqData, ResData>
       options?: WorkOptions
     }
   | {
       includeMetadata: true
-      handler: WorkWithMetadataHandler<ReqData, ResData>
+      handler:
+        | WorkWithMetadataHandler<ReqData, ResData>
+        | PgBossFastifyWorkWithMetadataHandler<ReqData, ResData>
       options?: WorkOptions & { includeMetadata: true }
     }
 )
+
+export type PgBossWorkerDefinitionFactory<
+  ReqData extends object = object,
+  ResData = any,
+> = (fastify: FastifyInstance) => PgBossWorkerDefinition<ReqData, ResData>
+
+export type PgBossWorkerRegistration<
+  ReqData extends object = object,
+  ResData = any,
+> = PgBossWorkerDefinition<ReqData, ResData> | PgBossWorkerDefinitionFactory<ReqData, ResData>
 
 export type FastifyPgBossOptions = {
   /**
@@ -140,7 +164,7 @@ export type FastifyPgBossOptions = {
   /**
    * Register workers after queues and schedules.
    */
-  workers?: PgBossWorkerDefinition[]
+  workers?: PgBossWorkerRegistration<any, any>[]
   /**
    * Attach pg-boss event handlers. The default error handler logs errors.
    */

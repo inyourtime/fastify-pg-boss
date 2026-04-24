@@ -157,6 +157,51 @@ test('registers worker queues, worker schedules, and processes jobs', async (t) 
   assert.deepEqual(jobs[0].data, { hello: 'world' })
 })
 
+test('worker definitions can access the fastify instance during registration and handling', async (t) => {
+  const app = Fastify({ logger: false })
+  t.after(() => app.close())
+  const schema = createSchemaName()
+  const queue = `${schema}/fastify-aware`
+
+  let resolveProcessed
+  const processed = new Promise((resolve) => {
+    resolveProcessed = resolve
+  })
+
+  await app.register(fastifyPgBoss, {
+    constructorOptions: {
+      connectionString,
+      schema,
+    },
+    workers: [
+      definePgBossWorker((workerApp) => {
+        assert.equal(workerApp, app)
+
+        return {
+          name: 'fastify-aware-worker',
+          queue,
+          createQueue: true,
+          options: {
+            pollingIntervalSeconds: 0.5,
+          },
+          async handler(jobs, handlerApp) {
+            resolveProcessed({ handlerApp, jobs })
+          },
+        }
+      }),
+    ],
+  })
+
+  const jobId = await getPgBoss(app).send(queue, { hello: 'fastify' })
+  const result = await waitFor(processed, 10_000, 'worker did not receive fastify')
+
+  assert.equal(typeof jobId, 'string')
+  assert.equal(result.handlerApp, app)
+  assert.equal(result.jobs.length, 1)
+  assert.equal(result.jobs[0].name, queue)
+  assert.deepEqual(result.jobs[0].data, { hello: 'fastify' })
+})
+
 test('supports the cron string worker schedule shortcut', async (t) => {
   const app = Fastify({ logger: false })
   t.after(() => app.close())

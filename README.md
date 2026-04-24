@@ -154,8 +154,48 @@ export const onThisDayWorker = definePgBossWorker<OnThisDayJob>({
 })
 ```
 
-If you need the Fastify instance inside the handler, create the worker definition
-inside the `register` call or build it with your own factory.
+If you need the Fastify instance inside the handler, accept it as the handler's
+second argument:
+
+```ts
+definePgBossWorker<OnThisDayJob>({
+  name: 'on-this-day',
+  async handler(jobs, app) {
+    for (const job of jobs) {
+      app.log.info({ jobId: job.id }, 'processing job')
+    }
+  },
+})
+```
+
+You can also define the worker as a Fastify-aware factory. This is useful when
+you already have a handler factory that closes over the app instance:
+
+```ts
+import type { FastifyInstance } from 'fastify'
+import type { Job, WorkHandler } from 'pg-boss'
+import { definePgBossWorker } from 'fastify-pg-boss'
+
+type OnThisDayJob = {
+  date?: string
+  urlTemplate?: string
+}
+
+export function createOnThisDayWorker(app: FastifyInstance): WorkHandler<OnThisDayJob> {
+  return async (jobs: Job<OnThisDayJob>[]) => {
+    for (const job of jobs) {
+      app.log.info({ jobId: job.id, queue: job.name }, 'processing job')
+    }
+  }
+}
+
+export const onThisDayWorker = definePgBossWorker<OnThisDayJob>((app) => ({
+  name: 'on-this-day',
+  queue: 'notifications/on-this-day/daily',
+  createQueue: true,
+  handler: createOnThisDayWorker(app),
+}))
+```
 
 For the smallest scheduled worker, `schedule` can be only the cron expression:
 

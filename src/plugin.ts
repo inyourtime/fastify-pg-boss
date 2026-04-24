@@ -8,6 +8,7 @@ import {
   registerQueue,
   registerSchedule,
   registerWorker,
+  resolveWorkerDefinition,
 } from './lifecycle.js'
 
 const plugin: FastifyPluginAsync<FastifyPgBossOptions> = async (fastify, options) => {
@@ -39,8 +40,10 @@ const plugin: FastifyPluginAsync<FastifyPgBossOptions> = async (fastify, options
     await registerSchedule(boss, schedule)
   }
 
-  for (const worker of options.workers ?? []) {
-    await registerWorker(boss, worker)
+  const workers = (options.workers ?? []).map((worker) => resolveWorkerDefinition(fastify, worker))
+
+  for (const worker of workers) {
+    await registerWorker(boss, worker, fastify)
   }
 
   fastify.pgBoss = boss
@@ -51,7 +54,7 @@ const plugin: FastifyPluginAsync<FastifyPgBossOptions> = async (fastify, options
         return
       }
 
-      await closeWorkers(fastify.pgBoss, options.workers)
+      await closeWorkers(fastify.pgBoss, workers)
       await fastify.pgBoss.stop(options.stopOptions)
       fastify.pgBoss = null
     })

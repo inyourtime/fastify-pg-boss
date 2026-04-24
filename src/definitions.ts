@@ -4,6 +4,8 @@ import type {
   PgBossQueueDefinition,
   PgBossScheduleDefinition,
   PgBossWorkerDefinition,
+  PgBossWorkerDefinitionFactory,
+  PgBossWorkerRegistration,
 } from './types.js'
 
 export function definePgBossQueue(definition: PgBossQueueDefinition): PgBossQueueDefinition {
@@ -18,7 +20,15 @@ export function definePgBossSchedule<Data extends object = object>(
 
 export function definePgBossWorker<ReqData extends object = object, ResData = any>(
   definition: PgBossWorkerDefinition<ReqData, ResData>,
-): PgBossWorkerDefinition<ReqData, ResData> {
+): PgBossWorkerDefinition<ReqData, ResData>
+
+export function definePgBossWorker<ReqData extends object = object, ResData = any>(
+  definition: PgBossWorkerDefinitionFactory<ReqData, ResData>,
+): PgBossWorkerDefinitionFactory<ReqData, ResData>
+
+export function definePgBossWorker<ReqData extends object = object, ResData = any>(
+  definition: PgBossWorkerRegistration<ReqData, ResData>,
+): PgBossWorkerRegistration<ReqData, ResData> {
   return definition
 }
 
