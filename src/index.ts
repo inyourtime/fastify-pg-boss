@@ -1,10 +1,10 @@
-export { default, fastifyPgBoss } from './plugin.js'
 export {
   definePgBossQueue,
   definePgBossSchedule,
   definePgBossWorker,
   getPgBoss,
 } from './definitions.js'
+export { default, fastifyPgBoss } from './plugin.js'
 export type {
   FastifyPgBossOptions,
   PgBossConstructorInput,

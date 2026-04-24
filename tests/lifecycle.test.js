@@ -2,13 +2,12 @@ import assert from 'node:assert/strict'
 import { Writable } from 'node:stream'
 import { before, test } from 'node:test'
 import Fastify from 'fastify'
-import pino from 'pino'
 import { PgBoss } from 'pg-boss'
+import pino from 'pino'
 import fastifyPgBoss, {
   definePgBossQueue,
   definePgBossSchedule,
   definePgBossWorker,
-  getPgBoss,
 } from '../dist/index.js'
 import {
   attachPgBossEventHandlers,
@@ -113,8 +112,14 @@ test('createBoss supports every constructor path against postgres and rejects mi
   const app = Fastify({ logger: false })
   t.after(() => app.close())
 
-  const existingBoss = new PgBoss({ connectionString, schema: createSchemaName() })
-  const factoryBoss = new PgBoss({ connectionString, schema: createSchemaName() })
+  const existingBoss = new PgBoss({
+    connectionString,
+    schema: createSchemaName(),
+  })
+  const factoryBoss = new PgBoss({
+    connectionString,
+    schema: createSchemaName(),
+  })
 
   assert.equal(await createBoss(app, { boss: existingBoss }), existingBoss)
   await assertStartsAgainstPostgres(t, existingBoss)
@@ -295,7 +300,11 @@ test('registers queues, schedules, and workers against postgres across branches'
     },
     includeMetadata: true,
     name: 'metadata-worker',
-    options: { batchSize: 1, includeMetadata: true, pollingIntervalSeconds: 0.5 },
+    options: {
+      batchSize: 1,
+      includeMetadata: true,
+      pollingIntervalSeconds: 0.5,
+    },
     queue: metadataQueue,
     queueOptions: { retryLimit: 5 },
   })
@@ -351,24 +360,41 @@ test('registers queues, schedules, and workers against postgres across branches'
   assert.deepEqual(metadataJobs[0]?.data, { metadata: true })
   assert.equal(fastifyMetadataJobs.fastify, app)
   assert.equal(fastifyMetadataJobs.jobs[0]?.state, 'active')
-  assert.deepEqual(fastifyMetadataJobs.jobs[0]?.data, { fastifyMetadata: true })
+  assert.deepEqual(fastifyMetadataJobs.jobs[0]?.data, {
+    fastifyMetadata: true,
+  })
 
   await closeWorkers(boss)
   await closeWorkers(boss, [
     { enabled: false, async handler() {}, name: disabledWorkerQueue },
     { async handler() {}, name: plainWorkerQueue, offWorkOnClose: false },
-    { async handler() {}, name: scheduledWorkerQueue, offWorkOptions: { wait: true } },
+    {
+      async handler() {},
+      name: scheduledWorkerQueue,
+      offWorkOptions: { wait: true },
+    },
     { async handler() {}, name: 'metadata-worker', queue: metadataQueue },
-    { async handler() {}, name: 'fastify-metadata-worker', queue: fastifyMetadataQueue },
+    {
+      async handler() {},
+      name: 'fastify-metadata-worker',
+      queue: fastifyMetadataQueue,
+    },
   ])
 })
 
 test('maps worker schedule shortcuts', () => {
   assert.equal(getWorkerSchedule({ async handler() {}, name: 'plain' }), null)
-  assert.deepEqual(getWorkerSchedule({ async handler() {}, name: 'plain', schedule: '0 1 * * *' }), {
-    cron: '0 1 * * *',
-    name: 'plain',
-  })
+  assert.deepEqual(
+    getWorkerSchedule({
+      async handler() {},
+      name: 'plain',
+      schedule: '0 1 * * *',
+    }),
+    {
+      cron: '0 1 * * *',
+      name: 'plain',
+    },
+  )
   assert.deepEqual(
     getWorkerSchedule({
       async handler() {},

@@ -69,10 +69,14 @@ test('FastifyPgBossOptions accepts typed worker objects and factories', () => {
   } satisfies FastifyPgBossOptions
 
   expect(options.workers[0]).type.toBeAssignableTo<
-    PgBossWorkerDefinition<CleanupJobData> | PgBossWorkerDefinitionFactory<CleanupJobData> | undefined
+    | PgBossWorkerDefinition<CleanupJobData>
+    | PgBossWorkerDefinitionFactory<CleanupJobData>
+    | undefined
   >()
   expect(options.workers[1]).type.toBeAssignableTo<
-    PgBossWorkerDefinition<CleanupJobData> | PgBossWorkerDefinitionFactory<CleanupJobData> | undefined
+    | PgBossWorkerDefinition<CleanupJobData>
+    | PgBossWorkerDefinitionFactory<CleanupJobData>
+    | undefined
   >()
 })
 

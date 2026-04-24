@@ -1,6 +1,5 @@
-import fp from 'fastify-plugin'
 import type { FastifyPluginAsync } from 'fastify'
-import type { FastifyPgBossOptions } from './types.js'
+import fp from 'fastify-plugin'
 import {
   attachPgBossEventHandlers,
   closeWorkers,
@@ -10,6 +9,7 @@ import {
   registerWorker,
   resolveWorkerDefinition,
 } from './lifecycle.js'
+import type { FastifyPgBossOptions } from './types.js'
 
 const plugin: FastifyPluginAsync<FastifyPgBossOptions> = async (fastify, options) => {
   const enabled = options.enabled ?? true

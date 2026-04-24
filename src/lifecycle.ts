@@ -1,6 +1,6 @@
-import { PgBoss } from 'pg-boss'
 import type { FastifyInstance } from 'fastify'
 import type { Job, JobWithMetadata, WorkHandler, WorkWithMetadataHandler } from 'pg-boss'
+import { PgBoss } from 'pg-boss'
 import type {
   FastifyPgBossOptions,
   PgBossQueueDefinition,
@@ -196,7 +196,7 @@ export async function registerWorker(
 
   if (worker.includeMetadata) {
     const handler: WorkWithMetadataHandler<object> = fastify
-      ? (async (jobs: JobWithMetadata<object>[]) => worker.handler(jobs, fastify))
+      ? async (jobs: JobWithMetadata<object>[]) => worker.handler(jobs, fastify)
       : (worker.handler as WorkWithMetadataHandler<object>)
 
     await boss.work(queue, { ...(worker.options ?? {}), includeMetadata: true as const }, handler)
@@ -204,7 +204,7 @@ export async function registerWorker(
   }
 
   const handler: WorkHandler<object> = fastify
-    ? (async (jobs: Job<object>[]) => worker.handler(jobs, fastify))
+    ? async (jobs: Job<object>[]) => worker.handler(jobs, fastify)
     : (worker.handler as WorkHandler<object>)
 
   await boss.work(queue, worker.options ?? {}, handler)

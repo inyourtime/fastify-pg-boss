@@ -1,17 +1,17 @@
-import { PgBoss } from 'pg-boss'
+import type { FastifyInstance } from 'fastify'
 import type {
   BamEvent,
   ConstructorOptions,
   Job,
   JobWithMetadata,
   OffWorkOptions,
+  PgBoss,
   Queue,
   ScheduleOptions,
   StopOptions,
   WipData,
   WorkOptions,
 } from 'pg-boss'
-import type { FastifyInstance } from 'fastify'
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -117,15 +117,13 @@ export type PgBossWorkerDefinition<ReqData extends object = object, ResData = an
     }
 )
 
-export type PgBossWorkerDefinitionFactory<
-  ReqData extends object = object,
-  ResData = any,
-> = (fastify: FastifyInstance) => PgBossWorkerDefinition<ReqData, ResData>
+export type PgBossWorkerDefinitionFactory<ReqData extends object = object, ResData = any> = (
+  fastify: FastifyInstance,
+) => PgBossWorkerDefinition<ReqData, ResData>
 
-export type PgBossWorkerRegistration<
-  ReqData extends object = object,
-  ResData = any,
-> = PgBossWorkerDefinition<ReqData, ResData> | PgBossWorkerDefinitionFactory<ReqData, ResData>
+export type PgBossWorkerRegistration<ReqData extends object = object, ResData = any> =
+  | PgBossWorkerDefinition<ReqData, ResData>
+  | PgBossWorkerDefinitionFactory<ReqData, ResData>
 
 export type FastifyPgBossOptions = {
   /**
