@@ -21,8 +21,9 @@
     "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\"",
     "db:down": "docker compose down -v --remove-orphans",
     "db:up": "docker compose up -d --wait postgres",
+    "type-test": "tstyche",
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && npm run build && c8 --100 node --test"
+    "test": "npm run typecheck && npm run type-test && npm run build && c8 --100 node --test"
   },
   "keywords": [
     "fastify",
@@ -49,6 +50,7 @@
     "fastify": "^5.8.4",
     "pg-boss": "^12.15.0",
     "pino": "^10.3.1",
+    "tstyche": "^7.1.0",
     "typescript": "^6.0.2"
   }
 }

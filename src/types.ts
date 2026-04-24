@@ -9,9 +9,7 @@ import type {
   ScheduleOptions,
   StopOptions,
   WipData,
-  WorkHandler,
   WorkOptions,
-  WorkWithMetadataHandler,
 } from 'pg-boss'
 import type { FastifyInstance } from 'fastify'
 
@@ -109,14 +107,12 @@ export type PgBossWorkerDefinition<ReqData extends object = object, ResData = an
 } & (
   | {
       includeMetadata?: false
-      handler: WorkHandler<ReqData, ResData> | PgBossFastifyWorkHandler<ReqData, ResData>
+      handler: PgBossFastifyWorkHandler<ReqData, ResData>
       options?: WorkOptions
     }
   | {
       includeMetadata: true
-      handler:
-        | WorkWithMetadataHandler<ReqData, ResData>
-        | PgBossFastifyWorkWithMetadataHandler<ReqData, ResData>
+      handler: PgBossFastifyWorkWithMetadataHandler<ReqData, ResData>
       options?: WorkOptions & { includeMetadata: true }
     }
 )

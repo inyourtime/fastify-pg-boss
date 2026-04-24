@@ -447,6 +447,12 @@ Run typecheck, build, tests, and coverage thresholds:
 npm test
 ```
 
+Run only the TSTyche type tests:
+
+```sh
+npm run type-test
+```
+
 The test suite expects PostgreSQL at:
 
 ```txt
@@ -465,5 +471,6 @@ Other useful scripts:
 
 ```sh
 npm run typecheck
+npm run type-test
 npm run build
 ```
