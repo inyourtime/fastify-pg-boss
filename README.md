@@ -1,12 +1,19 @@
 # fastify-pg-boss
 
-Fastify plugin for [pg-boss](https://github.com/timgit/pg-boss). It owns the
-Fastify lifecycle around pg-boss and decorates the instance with the real
-`PgBoss` object, so every pg-boss API remains available through
-`fastify.pgBoss`.
+Fastify plugin for [pg-boss](https://github.com/timgit/pg-boss). It starts and
+stops pg-boss with the Fastify lifecycle, registers queues, schedules, and
+workers from plugin options, and decorates the Fastify instance with the real
+`PgBoss` object.
 
-This package exports only the Fastify plugin helpers. Import pg-boss runtime
-helpers and types directly from `pg-boss`.
+The plugin keeps pg-boss itself visible. Use `fastify.pgBoss` or `getPgBoss(app)`
+to call the full pg-boss API directly.
+
+## Requirements
+
+- Node.js `>=22.12.0`
+- Fastify `^5.0.0`
+- pg-boss `^12.15.0`
+- PostgreSQL supported by pg-boss
 
 ## Install
 
@@ -14,162 +21,242 @@ helpers and types directly from `pg-boss`.
 npm install fastify-pg-boss fastify pg-boss
 ```
 
-## Test
-
-Start the test PostgreSQL database before running the Node test suite:
-
-```sh
-npm run db:up
-```
-
-Run tests with Node's built-in test runner:
-
-```sh
-npm test
-```
-
-The test files check database connectivity before running. If PostgreSQL is not
-reachable, they fail with a message asking you to run `npm run db:up`. Use
-`POSTGRES_URL` to point the tests at a different database.
-
-Generate coverage with c8:
-
-```sh
-npm run coverage
-```
-
-The HTML report is written to `coverage/index.html`.
-
-Stop and remove the test database when finished:
-
-```sh
-npm run db:down
-```
-
-## Usage
+## Quick Start
 
 ```ts
 import Fastify from 'fastify'
-import fastifyPgBoss, { definePgBossWorker } from 'fastify-pg-boss'
+import fastifyPgBoss, { definePgBossWorker, getPgBoss } from 'fastify-pg-boss'
 
-const app = Fastify()
+const app = Fastify({ logger: true })
+
+type EmailJob = {
+  userId: string
+}
 
 await app.register(fastifyPgBoss, {
   connectionString: process.env.POSTGRES_URL,
   workers: [
-    definePgBossWorker({
-      name: 'on-this-day',
-      queue: 'notifications/on-this-day/daily',
+    definePgBossWorker<EmailJob>({
+      name: 'email-worker',
+      queue: 'email/send',
       createQueue: true,
-      schedule: {
-        cron: '0 8 * * *',
-        data: {},
-        tz: 'Asia/Bangkok',
-      },
       options: {
         pollingIntervalSeconds: 10,
       },
-      async handler(jobs) {
+      async handler(jobs, app) {
         for (const job of jobs) {
-          app.log.info({ jobId: job.id }, 'processing job')
+          app.log.info({ jobId: job.id, userId: job.data.userId }, 'sending email')
         }
       },
     }),
   ],
 })
 
-await app.pgBoss?.send('notifications/on-this-day/daily', {
-  date: new Date().toISOString(),
+await getPgBoss(app).send('email/send', {
+  userId: 'user_123',
 })
 ```
 
-## Full pg-boss API support
+When the plugin is enabled, `fastify.pgBoss` is a `PgBoss` instance. When the
+plugin is disabled, it is decorated as `null`.
 
-The plugin does not wrap or hide pg-boss. `fastify.pgBoss` is the original
-`PgBoss` instance, so methods such as `send`, `sendAfter`, `sendThrottled`,
-`sendDebounced`, `insert`, `fetch`, `work`, `offWork`, `publish`, `subscribe`,
-`cancel`, `resume`, `retry`, `complete`, `fail`, `touch`, `findJobs`,
-`createQueue`, `updateQueue`, `deleteQueue`, `getQueues`, `schedule`,
-`unschedule`, `getSchedules`, `getBamStatus`, `getDb`, and the rest of pg-boss'
-surface are available directly.
+## What It Does
 
-Use `getPgBoss(app)` when you prefer a non-nullable instance:
+- Creates or accepts a `PgBoss` instance.
+- Starts pg-boss during plugin registration by default.
+- Registers queues, schedules, and workers in that order.
+- Lets worker handlers receive the Fastify instance.
+- Logs pg-boss `error` events through `fastify.log` by default.
+- Calls `offWork` for registered workers and stops pg-boss from Fastify
+  `onClose` by default.
+- Leaves the complete pg-boss API available through the original instance.
+
+## Creating the Boss Instance
+
+Provide one of `connectionString`, `constructorOptions`, or `boss`.
+
+```ts
+await app.register(fastifyPgBoss, {
+  connectionString: process.env.POSTGRES_URL,
+})
+```
+
+```ts
+await app.register(fastifyPgBoss, {
+  constructorOptions: {
+    connectionString: process.env.POSTGRES_URL,
+    schema: 'jobs',
+  },
+})
+```
+
+```ts
+import { PgBoss } from 'pg-boss'
+
+const boss = new PgBoss({
+  connectionString: process.env.POSTGRES_URL,
+})
+
+await app.register(fastifyPgBoss, {
+  boss,
+})
+```
+
+`boss` may also be a connection string, pg-boss constructor options, an existing
+`PgBoss` instance, or a factory that receives the Fastify instance.
+
+```ts
+await app.register(fastifyPgBoss, {
+  boss: async (app) => {
+    app.log.info('creating pg-boss')
+
+    return new PgBoss({
+      connectionString: process.env.POSTGRES_URL,
+    })
+  },
+})
+```
+
+## Accessing pg-boss
+
+This plugin does not wrap pg-boss methods. Anything available on pg-boss is
+available on `fastify.pgBoss`.
+
+```ts
+await app.pgBoss?.send('queue-name', { ok: true })
+await app.pgBoss?.schedule('queue-name', '0 8 * * *', { source: 'cron' })
+```
+
+Use `getPgBoss(app)` when you want a non-nullable instance or a clear error if
+pg-boss is not available.
 
 ```ts
 import { getPgBoss } from 'fastify-pg-boss'
 
-await getPgBoss(app).send('queue-name', { ok: true })
+const boss = getPgBoss(app)
+await boss.send('queue-name', { ok: true })
 ```
 
-## Options
+## Queues
 
-- `enabled`: set `false` to decorate `pgBoss` as `null` and skip startup.
-- `boss`: existing `PgBoss` instance, constructor input, or factory.
-- `connectionString`: PostgreSQL connection string.
-- `constructorOptions`: pg-boss constructor options.
-- `start`: start pg-boss during registration. Defaults to `true`.
-- `stopOnClose`: call `offWork` and `stop` from Fastify `onClose`. Defaults to
-  `true`.
-- `stopOptions`: passed to `PgBoss.stop`.
-- `queues`: queue names or full pg-boss queue definitions to create.
-- `schedules`: schedules to register before workers.
-- `workers`: workers to register after queues and schedules. A worker can also
-  create its own queue and schedule itself via `createQueue`, `queueOptions`,
-  and `schedule`.
-- `events`: typed pg-boss event handlers.
-- `logErrors`: set `false` to disable the default `error` event logger.
-
-## Worker Definitions
-
-The plugin mirrors the common application pattern of defining workers outside
-the plugin and passing them into registration:
+Use `queues` when you want the plugin to create queues before schedules and
+workers are registered.
 
 ```ts
-import type { WorkOptions } from 'pg-boss'
+await app.register(fastifyPgBoss, {
+  connectionString: process.env.POSTGRES_URL,
+  queues: [
+    'email/send',
+    {
+      name: 'reports/daily',
+      retryLimit: 3,
+      retryDelay: 30,
+    },
+  ],
+})
+```
+
+`definePgBossQueue` is a typed identity helper for exporting queue definitions
+from another file.
+
+```ts
+import { definePgBossQueue } from 'fastify-pg-boss'
+
+export const emailQueue = definePgBossQueue({
+  name: 'email/send',
+  retryLimit: 3,
+})
+```
+
+## Schedules
+
+Use `schedules` for standalone pg-boss schedules.
+
+```ts
+await app.register(fastifyPgBoss, {
+  connectionString: process.env.POSTGRES_URL,
+  schedules: [
+    {
+      name: 'reports/daily',
+      cron: '0 8 * * *',
+      data: {
+        source: 'schedule',
+      },
+      key: 'daily-report',
+      options: {
+        tz: 'UTC',
+        retryLimit: 1,
+      },
+    },
+  ],
+})
+```
+
+Set `enabled: false` to keep a schedule definition in code without registering
+it.
+
+```ts
+{
+  name: 'reports/daily',
+  cron: '0 8 * * *',
+  enabled: false,
+}
+```
+
+`definePgBossSchedule` is a typed identity helper for exported schedule
+definitions.
+
+## Workers
+
+Workers are registered after queues and schedules. A worker uses `name` as its
+queue name unless `queue` is provided.
+
+```ts
 import { definePgBossWorker } from 'fastify-pg-boss'
 
-type OnThisDayJob = {
+type ReportJob = {
   date?: string
 }
 
-const workOptions: WorkOptions = {
-  pollingIntervalSeconds: 10,
-}
-
-export const onThisDayWorker = definePgBossWorker<OnThisDayJob>({
-  name: 'on-this-day',
-  queue: 'notifications/on-this-day/daily',
+export const dailyReportWorker = definePgBossWorker<ReportJob>({
+  name: 'daily-report-worker',
+  queue: 'reports/daily',
   createQueue: true,
-  schedule: {
-    cron: '0 8 * * *',
-    data: {},
-    tz: 'Asia/Bangkok',
+  queueOptions: {
+    retryBackoff: true,
+    retryLimit: 3,
   },
-  options: workOptions,
+  options: {
+    pollingIntervalSeconds: 10,
+  },
   async handler(jobs) {
     for (const job of jobs) {
-      // process job
+      // generate report
     }
   },
 })
 ```
 
-If you need the Fastify instance inside the handler, accept it as the handler's
-second argument:
+Set `enabled: false` to skip worker registration.
+
+### Fastify in Handlers
+
+Handlers may accept the Fastify instance as a second argument.
 
 ```ts
-definePgBossWorker<OnThisDayJob>({
-  name: 'on-this-day',
+export const dailyReportWorker = definePgBossWorker<ReportJob>({
+  name: 'daily-report-worker',
+  queue: 'reports/daily',
   async handler(jobs, app) {
     for (const job of jobs) {
-      app.log.info({ jobId: job.id }, 'processing job')
+      app.log.info({ jobId: job.id }, 'processing report')
     }
   },
 })
 ```
 
-You can also define the worker as a Fastify-aware factory. This is useful when
-you already have a handler factory that closes over the app instance:
+You can also pass a worker factory to `definePgBossWorker`. The factory runs
+during plugin registration and receives the Fastify instance.
 
 ```ts
 import type { FastifyInstance } from 'fastify'
@@ -184,7 +271,7 @@ type OnThisDayJob = {
 export function createOnThisDayWorker(app: FastifyInstance): WorkHandler<OnThisDayJob> {
   return async (jobs: Job<OnThisDayJob>[]) => {
     for (const job of jobs) {
-      app.log.info({ jobId: job.id, queue: job.name }, 'processing job')
+      app.log.info({ jobId: job.id, queue: job.name }, 'processing notifications')
     }
   }
 }
@@ -197,7 +284,29 @@ export const onThisDayWorker = definePgBossWorker<OnThisDayJob>((app) => ({
 }))
 ```
 
-For the smallest scheduled worker, `schedule` can be only the cron expression:
+### Worker Schedules
+
+A worker can register its own schedule. The schedule defaults to the worker's
+queue.
+
+```ts
+definePgBossWorker<ReportJob>({
+  name: 'daily-report-worker',
+  queue: 'reports/daily',
+  createQueue: true,
+  schedule: {
+    cron: '0 8 * * *',
+    data: {},
+    key: 'daily-report',
+    tz: 'Asia/Bangkok',
+  },
+  async handler(jobs, app) {
+    app.log.info({ count: jobs.length }, 'processing reports')
+  },
+})
+```
+
+For the smallest scheduled worker, `schedule` can be only the cron expression.
 
 ```ts
 definePgBossWorker({
@@ -208,4 +317,153 @@ definePgBossWorker({
     // process jobs
   },
 })
+```
+
+Use `schedule.name` when the scheduled queue should differ from the worker queue.
+Use `schedule.enabled: false` to skip registering the schedule.
+
+### Metadata Workers
+
+Set `includeMetadata: true` when you want pg-boss metadata on fetched jobs.
+
+```ts
+definePgBossWorker<ReportJob>({
+  name: 'metadata-worker',
+  queue: 'reports/metadata',
+  createQueue: true,
+  includeMetadata: true,
+  options: {
+    batchSize: 1,
+    includeMetadata: true,
+    pollingIntervalSeconds: 10,
+  },
+  async handler(jobs, app) {
+    for (const job of jobs) {
+      app.log.info({ state: job.state, priority: job.priority }, 'metadata job')
+    }
+  },
+})
+```
+
+### Shutdown Behavior
+
+On Fastify close, the plugin calls `offWork` for each registered worker and then
+stops pg-boss. Use worker-level options to tune that behavior.
+
+```ts
+definePgBossWorker({
+  name: 'long-running-worker',
+  offWorkOptions: {
+    wait: true,
+  },
+  async handler(jobs) {
+    // process jobs
+  },
+})
+```
+
+Set `offWorkOnClose: false` for workers that should not be passed to
+`boss.offWork` during plugin shutdown.
+
+## Events
+
+The plugin logs pg-boss `error` events through `fastify.log.error` by default.
+Provide `events` to attach custom handlers. Each handler receives the Fastify
+instance first.
+
+```ts
+await app.register(fastifyPgBoss, {
+  connectionString: process.env.POSTGRES_URL,
+  events: {
+    error(app, error) {
+      app.log.error({ err: error }, 'custom pg-boss error')
+    },
+    warning(app, warning) {
+      app.log.warn({ warning }, 'pg-boss warning')
+    },
+    stopped(app) {
+      app.log.info('pg-boss stopped')
+    },
+  },
+})
+```
+
+Supported event keys are `error`, `warning`, `wip`, `stopped`, and `bam`.
+If a custom event handler throws, the plugin catches the failure and logs it as
+`pg-boss event handler failed`.
+
+Set `logErrors: false` to disable the default error logger.
+
+## Options Reference
+
+| Option | Description |
+| --- | --- |
+| `enabled` | Set `false` to decorate `pgBoss` as `null` and skip pg-boss creation and startup. Defaults to `true`. |
+| `boss` | Existing `PgBoss` instance, connection string, constructor options, or `(fastify) => PgBoss | Promise<PgBoss>`. |
+| `connectionString` | PostgreSQL connection string. Used when `boss` and `constructorOptions` are omitted. |
+| `constructorOptions` | pg-boss constructor options. |
+| `start` | Start pg-boss during plugin registration. Defaults to `true`. |
+| `stopOnClose` | Run worker `offWork` and `PgBoss.stop()` in Fastify `onClose`. Defaults to `true`. |
+| `stopOptions` | Options passed to `PgBoss.stop()`. |
+| `queues` | Queue names or pg-boss queue definitions to create before schedules and workers. |
+| `schedules` | Schedule definitions to register before workers. |
+| `workers` | Worker definitions or worker factories to register after queues and schedules. |
+| `events` | Custom pg-boss event handlers. |
+| `logErrors` | Set `false` to disable the default pg-boss `error` logger. |
+
+## Exports
+
+```ts
+export {
+  fastifyPgBoss,
+  definePgBossQueue,
+  definePgBossSchedule,
+  definePgBossWorker,
+  getPgBoss,
+}
+```
+
+The package also exports TypeScript types for plugin options, worker
+definitions, schedules, queues, events, and Fastify-aware handlers. Import
+runtime pg-boss classes, helpers, and job types directly from `pg-boss`.
+
+## Development
+
+Install dependencies:
+
+```sh
+npm install
+```
+
+Start the test PostgreSQL database:
+
+```sh
+npm run db:up
+```
+
+Run typecheck, build, tests, and coverage thresholds:
+
+```sh
+npm test
+```
+
+The test suite expects PostgreSQL at:
+
+```txt
+postgres://fastify_pg_boss:fastify_pg_boss@localhost:55432/fastify_pg_boss
+```
+
+Use `POSTGRES_URL` to point tests at a different database.
+
+Stop and remove the test database:
+
+```sh
+npm run db:down
+```
+
+Other useful scripts:
+
+```sh
+npm run typecheck
+npm run build
 ```
