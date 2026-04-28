@@ -1,12 +1,14 @@
 {
   "$schema": "https://unpkg.com/release-it@20/schema/release-it.json",
   "git": {
-    "commitMessage": "chore: release v${version}",
+    "commitMessage": "Bumped v${version}",
     "tagName": "v${version}",
     "requireCleanWorkingDir": true
   },
   "github": {
-    "release": true
+    "release": true,
+    "releaseName": "v${version}",
+    "autoGenerate": true
   },
   "npm": {
     "publish": true
