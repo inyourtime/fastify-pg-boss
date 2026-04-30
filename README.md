@@ -22,7 +22,7 @@ to call the full pg-boss API directly.
 ## Install
 
 ```sh
-npm install fastify-pg-boss fastify pg-boss
+npm install fastify-pg-boss pg-boss
 ```
 
 ## Quick Start
