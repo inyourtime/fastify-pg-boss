@@ -5,10 +5,9 @@
 [![Checked with Biome](https://img.shields.io/badge/Checked_with-Biome-60a5fa?style=flat&logo=biome)](https://biomejs.dev)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat)](./LICENSE)
 
-Fastify plugin for [pg-boss](https://github.com/timgit/pg-boss). It starts and
-stops pg-boss with the Fastify lifecycle, registers queues, schedules, and
-workers from plugin options, and decorates the Fastify instance with the real
-`PgBoss` object.
+Fastify plugin for [pg-boss](https://github.com/timgit/pg-boss). It registers
+typed queues, schedules, and workers from plugin options, and decorates the
+Fastify instance with the real `PgBoss` object.
 
 The plugin keeps pg-boss itself visible. Use `fastify.pgBoss` or `getPgBoss(app)`
 to call the full pg-boss API directly.

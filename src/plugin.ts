@@ -8,7 +8,7 @@ import {
   registerSchedule,
   registerWorker,
   resolveWorkerDefinition,
-} from './lifecycle.js'
+} from './setup.js'
 import type { FastifyPgBossOptions } from './types.js'
 
 const plugin: FastifyPluginAsync<FastifyPgBossOptions> = async (fastify, options) => {

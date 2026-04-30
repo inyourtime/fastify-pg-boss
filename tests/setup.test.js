@@ -18,7 +18,7 @@ import {
   registerSchedule,
   registerWorker,
   resolveWorkerDefinition,
-} from '../dist/lifecycle.js'
+} from '../dist/setup.js'
 import {
   assertDatabaseAvailable,
   connectionString,
