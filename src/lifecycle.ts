@@ -1,5 +1,4 @@
 import type { FastifyInstance } from 'fastify'
-import type { Job, JobWithMetadata, WorkHandler, WorkWithMetadataHandler } from 'pg-boss'
 import { PgBoss } from 'pg-boss'
 import type {
   FastifyPgBossOptions,
@@ -174,11 +173,7 @@ export function resolveWorkerDefinition(
   return typeof worker === 'function' ? worker(fastify) : worker
 }
 
-export async function registerWorker(
-  boss: PgBoss,
-  worker: PgBossWorkerDefinition,
-  fastify?: FastifyInstance,
-) {
+export async function registerWorker(boss: PgBoss, worker: PgBossWorkerDefinition) {
   if (worker.enabled === false) {
     return
   }
@@ -195,19 +190,15 @@ export async function registerWorker(
   }
 
   if (worker.includeMetadata) {
-    const handler: WorkWithMetadataHandler<object> = fastify
-      ? async (jobs: JobWithMetadata<object>[]) => worker.handler(jobs, fastify)
-      : (worker.handler as WorkWithMetadataHandler<object>)
-
-    await boss.work(queue, { ...(worker.options ?? {}), includeMetadata: true as const }, handler)
+    await boss.work(
+      queue,
+      { ...(worker.options ?? {}), includeMetadata: true as const },
+      worker.handler,
+    )
     return
   }
 
-  const handler: WorkHandler<object> = fastify
-    ? async (jobs: Job<object>[]) => worker.handler(jobs, fastify)
-    : (worker.handler as WorkHandler<object>)
-
-  await boss.work(queue, worker.options ?? {}, handler)
+  await boss.work(queue, worker.options ?? {}, worker.handler)
 }
 
 export async function closeWorkers(boss: PgBoss, workers: PgBossWorkerDefinition[] = []) {

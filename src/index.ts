@@ -12,8 +12,6 @@ export type {
   PgBossEventHandlers,
   PgBossEventMap,
   PgBossFactory,
-  PgBossFastifyWorkHandler,
-  PgBossFastifyWorkWithMetadataHandler,
   PgBossQueueDefinition,
   PgBossScheduleDefinition,
   PgBossWarning,
@@ -21,4 +19,6 @@ export type {
   PgBossWorkerDefinitionFactory,
   PgBossWorkerRegistration,
   PgBossWorkerScheduleDefinition,
+  PgBossWorkHandler,
+  PgBossWorkWithMetadataHandler,
 } from './types.js'

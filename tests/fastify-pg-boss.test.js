@@ -157,7 +157,7 @@ test('registers worker queues, worker schedules, and processes jobs', async (t) 
   assert.deepEqual(jobs[0].data, { hello: 'world' })
 })
 
-test('worker definitions can access the fastify instance during registration and handling', async (t) => {
+test('worker factories can access the fastify instance during registration', async (t) => {
   const app = Fastify({ logger: false })
   t.after(() => app.close())
   const schema = createSchemaName()
@@ -184,8 +184,8 @@ test('worker definitions can access the fastify instance during registration and
           options: {
             pollingIntervalSeconds: 0.5,
           },
-          async handler(jobs, handlerApp) {
-            resolveProcessed({ handlerApp, jobs })
+          async handler(jobs) {
+            resolveProcessed(jobs)
           },
         }
       }),
@@ -193,20 +193,19 @@ test('worker definitions can access the fastify instance during registration and
   })
 
   const jobId = await getPgBoss(app).send(queue, { hello: 'fastify' })
-  const result = await waitFor(processed, 10_000, 'worker did not receive fastify')
+  const jobs = await waitFor(processed, 10_000, 'worker did not process job')
 
   assert.equal(typeof jobId, 'string')
-  assert.equal(result.handlerApp, app)
-  assert.equal(result.jobs.length, 1)
-  assert.equal(result.jobs[0].name, queue)
-  assert.deepEqual(result.jobs[0].data, { hello: 'fastify' })
+  assert.equal(jobs.length, 1)
+  assert.equal(jobs[0].name, queue)
+  assert.deepEqual(jobs[0].data, { hello: 'fastify' })
 })
 
-test('worker object handlers receive the fastify instance', async (t) => {
+test('worker object handlers receive only jobs', async (t) => {
   const app = Fastify({ logger: false })
   t.after(() => app.close())
   const schema = createSchemaName()
-  const queue = `${schema}/direct-fastify-aware`
+  const queue = `${schema}/direct-worker`
 
   let resolveProcessed
   const processed = new Promise((resolve) => {
@@ -220,27 +219,28 @@ test('worker object handlers receive the fastify instance', async (t) => {
     },
     workers: [
       definePgBossWorker({
-        name: 'direct-fastify-aware-worker',
+        name: 'direct-worker',
         queue,
         createQueue: true,
         options: {
           pollingIntervalSeconds: 0.5,
         },
-        async handler(jobs, handlerApp) {
-          resolveProcessed({ handlerApp, jobs })
+        async handler(...args) {
+          resolveProcessed(args)
         },
       }),
     ],
   })
 
   const jobId = await getPgBoss(app).send(queue, { source: 'direct-handler' })
-  const result = await waitFor(processed, 10_000, 'worker object handler did not receive fastify')
+  const args = await waitFor(processed, 10_000, 'worker object handler did not process job')
+  const [jobs] = args
 
   assert.equal(typeof jobId, 'string')
-  assert.equal(result.handlerApp, app)
-  assert.equal(result.jobs.length, 1)
-  assert.equal(result.jobs[0].name, queue)
-  assert.deepEqual(result.jobs[0].data, { source: 'direct-handler' })
+  assert.equal(args.length, 1)
+  assert.equal(jobs.length, 1)
+  assert.equal(jobs[0].name, queue)
+  assert.deepEqual(jobs[0].data, { source: 'direct-handler' })
 })
 
 test('plugin skips disabled workers and disabled worker schedules', async (t) => {

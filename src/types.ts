@@ -2,15 +2,15 @@ import type { FastifyInstance } from 'fastify'
 import type {
   BamEvent,
   ConstructorOptions,
-  Job,
-  JobWithMetadata,
   OffWorkOptions,
   PgBoss,
   Queue,
   ScheduleOptions,
   StopOptions,
   WipData,
+  WorkHandler,
   WorkOptions,
+  WorkWithMetadataHandler,
 } from 'pg-boss'
 
 declare module 'fastify' {
@@ -73,15 +73,12 @@ export type PgBossWorkerScheduleDefinition<Data extends object = object> =
       tz?: string
     }
 
-export type PgBossFastifyWorkHandler<ReqData, ResData = any> = (
-  jobs: Job<ReqData>[],
-  fastify: FastifyInstance,
-) => Promise<ResData>
+export type PgBossWorkHandler<ReqData, ResData = any> = WorkHandler<ReqData, ResData>
 
-export type PgBossFastifyWorkWithMetadataHandler<ReqData, ResData = any> = (
-  jobs: JobWithMetadata<ReqData>[],
-  fastify: FastifyInstance,
-) => Promise<ResData>
+export type PgBossWorkWithMetadataHandler<ReqData, ResData = any> = WorkWithMetadataHandler<
+  ReqData,
+  ResData
+>
 
 export type PgBossWorkerDefinition<ReqData extends object = object, ResData = any> = {
   createQueue?: boolean
@@ -107,12 +104,12 @@ export type PgBossWorkerDefinition<ReqData extends object = object, ResData = an
 } & (
   | {
       includeMetadata?: false
-      handler: PgBossFastifyWorkHandler<ReqData, ResData>
+      handler: PgBossWorkHandler<ReqData, ResData>
       options?: WorkOptions
     }
   | {
       includeMetadata: true
-      handler: PgBossFastifyWorkWithMetadataHandler<ReqData, ResData>
+      handler: PgBossWorkWithMetadataHandler<ReqData, ResData>
       options?: WorkOptions & { includeMetadata: true }
     }
 )

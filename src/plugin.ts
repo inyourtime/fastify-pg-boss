@@ -43,7 +43,7 @@ const plugin: FastifyPluginAsync<FastifyPgBossOptions> = async (fastify, options
   const workers = (options.workers ?? []).map((worker) => resolveWorkerDefinition(fastify, worker))
 
   for (const worker of workers) {
-    await registerWorker(boss, worker, fastify)
+    await registerWorker(boss, worker)
   }
 
   fastify.pgBoss = boss

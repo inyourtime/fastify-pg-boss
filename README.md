@@ -48,7 +48,7 @@ await app.register(fastifyPgBoss, {
       options: {
         pollingIntervalSeconds: 10,
       },
-      async handler(jobs, app) {
+      async handler(jobs) {
         for (const job of jobs) {
           app.log.info({ jobId: job.id, userId: job.data.userId }, 'sending email')
         }
@@ -70,7 +70,7 @@ plugin is disabled, it is decorated as `null`.
 - Creates or accepts a `PgBoss` instance.
 - Starts pg-boss during plugin registration by default.
 - Registers queues, schedules, and workers in that order.
-- Lets worker handlers receive the Fastify instance.
+- Lets worker factories receive the Fastify instance.
 - Logs pg-boss `error` events through `fastify.log` by default.
 - Calls `offWork` for registered workers and stops pg-boss from Fastify
   `onClose` by default.
@@ -244,24 +244,11 @@ export const dailyReportWorker = definePgBossWorker<ReportJob>({
 
 Set `enabled: false` to skip worker registration.
 
-### Fastify in Handlers
+### Fastify in Worker Factories
 
-Handlers may accept the Fastify instance as a second argument.
-
-```ts
-export const dailyReportWorker = definePgBossWorker<ReportJob>({
-  name: 'daily-report-worker',
-  queue: 'reports/daily',
-  async handler(jobs, app) {
-    for (const job of jobs) {
-      app.log.info({ jobId: job.id }, 'processing report')
-    }
-  },
-})
-```
-
-You can also pass a worker factory to `definePgBossWorker`. The factory runs
-during plugin registration and receives the Fastify instance.
+Worker handlers receive only the jobs fetched by pg-boss. If a worker needs
+Fastify services, pass a worker factory to `definePgBossWorker`. The factory
+runs during plugin registration and receives the Fastify instance.
 
 ```ts
 import type { FastifyInstance } from 'fastify'
@@ -305,8 +292,10 @@ definePgBossWorker<ReportJob>({
     key: 'daily-report',
     tz: 'Asia/Bangkok',
   },
-  async handler(jobs, app) {
-    app.log.info({ count: jobs.length }, 'processing reports')
+  async handler(jobs) {
+    for (const job of jobs) {
+      // generate scheduled report
+    }
   },
 })
 ```
@@ -342,9 +331,9 @@ definePgBossWorker<ReportJob>({
     includeMetadata: true,
     pollingIntervalSeconds: 10,
   },
-  async handler(jobs, app) {
+  async handler(jobs) {
     for (const job of jobs) {
-      app.log.info({ state: job.state, priority: job.priority }, 'metadata job')
+      // process job.state, job.priority, and other metadata
     }
   },
 })
@@ -429,8 +418,8 @@ export {
 ```
 
 The package also exports TypeScript types for plugin options, worker
-definitions, schedules, queues, events, and Fastify-aware handlers. Import
-runtime pg-boss classes, helpers, and job types directly from `pg-boss`.
+definitions, schedules, queues, events, and worker handlers. Import runtime
+pg-boss classes, helpers, and job types directly from `pg-boss`.
 
 ## Development
 
