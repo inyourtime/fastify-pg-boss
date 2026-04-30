@@ -18,7 +18,7 @@ import {
   registerSchedule,
   registerWorker,
   resolveWorkerDefinition,
-} from '../dist/lifecycle.js'
+} from '../dist/setup.js'
 import {
   assertDatabaseAvailable,
   connectionString,
@@ -237,22 +237,19 @@ test('registers queues, schedules, and workers against postgres across branches'
   const plainWorkerQueue = `${schema}/plain-worker`
   const scheduledWorkerQueue = `${schema}/scheduled-worker`
   const metadataQueue = `${schema}/metadata-queue`
-  const fastifyMetadataQueue = `${schema}/fastify-metadata-queue`
-  const app = Fastify({ logger: false })
+  const directMetadataQueue = `${schema}/direct-metadata-queue`
   let resolvePlainWorker
   let resolveMetadataWorker
-  let resolveFastifyMetadataWorker
+  let resolveDirectMetadataWorker
   const plainWorkerJobs = new Promise((resolve) => {
     resolvePlainWorker = resolve
   })
   const metadataWorkerJobs = new Promise((resolve) => {
     resolveMetadataWorker = resolve
   })
-  const fastifyMetadataWorkerJobs = new Promise((resolve) => {
-    resolveFastifyMetadataWorker = resolve
+  const directMetadataWorkerJobs = new Promise((resolve) => {
+    resolveDirectMetadataWorker = resolve
   })
-
-  t.after(() => app.close())
 
   await registerQueue(boss, stringQueue)
   await registerQueue(boss, { name: objectQueue, retryLimit: 2 })
@@ -260,7 +257,7 @@ test('registers queues, schedules, and workers against postgres across branches'
   await registerQueue(boss, keyedScheduleQueue)
   await registerQueue(boss, plainWorkerQueue)
   await registerQueue(boss, scheduledWorkerQueue)
-  await registerQueue(boss, fastifyMetadataQueue)
+  await registerQueue(boss, directMetadataQueue)
   await registerSchedule(boss, {
     cron: '* * * * *',
     enabled: false,
@@ -308,18 +305,14 @@ test('registers queues, schedules, and workers against postgres across branches'
     queue: metadataQueue,
     queueOptions: { retryLimit: 5 },
   })
-  await registerWorker(
-    boss,
-    {
-      async handler(jobs, fastify) {
-        resolveFastifyMetadataWorker({ fastify, jobs })
-      },
-      includeMetadata: true,
-      name: 'fastify-metadata-worker',
-      queue: fastifyMetadataQueue,
+  await registerWorker(boss, {
+    async handler(jobs) {
+      resolveDirectMetadataWorker(jobs)
     },
-    app,
-  )
+    includeMetadata: true,
+    name: 'direct-metadata-worker',
+    queue: directMetadataQueue,
+  })
 
   const stringQueueResult = await boss.getQueue(stringQueue)
   const objectQueueResult = await boss.getQueue(objectQueue)
@@ -341,7 +334,7 @@ test('registers queues, schedules, and workers against postgres across branches'
 
   await boss.send(plainWorkerQueue, { plain: true })
   await boss.send(metadataQueue, { metadata: true })
-  await boss.send(fastifyMetadataQueue, { fastifyMetadata: true })
+  await boss.send(directMetadataQueue, { directMetadata: true })
 
   const plainJobs = await waitFor(plainWorkerJobs, 10_000, 'plain worker did not process a job')
   const metadataJobs = await waitFor(
@@ -349,19 +342,18 @@ test('registers queues, schedules, and workers against postgres across branches'
     10_000,
     'metadata worker did not process a job',
   )
-  const fastifyMetadataJobs = await waitFor(
-    fastifyMetadataWorkerJobs,
+  const directMetadataJobs = await waitFor(
+    directMetadataWorkerJobs,
     10_000,
-    'fastify metadata worker did not process a job',
+    'direct metadata worker did not process a job',
   )
 
   assert.deepEqual(plainJobs[0]?.data, { plain: true })
   assert.equal(metadataJobs[0]?.state, 'active')
   assert.deepEqual(metadataJobs[0]?.data, { metadata: true })
-  assert.equal(fastifyMetadataJobs.fastify, app)
-  assert.equal(fastifyMetadataJobs.jobs[0]?.state, 'active')
-  assert.deepEqual(fastifyMetadataJobs.jobs[0]?.data, {
-    fastifyMetadata: true,
+  assert.equal(directMetadataJobs[0]?.state, 'active')
+  assert.deepEqual(directMetadataJobs[0]?.data, {
+    directMetadata: true,
   })
 
   await closeWorkers(boss)
@@ -376,8 +368,8 @@ test('registers queues, schedules, and workers against postgres across branches'
     { async handler() {}, name: 'metadata-worker', queue: metadataQueue },
     {
       async handler() {},
-      name: 'fastify-metadata-worker',
-      queue: fastifyMetadataQueue,
+      name: 'direct-metadata-worker',
+      queue: directMetadataQueue,
     },
   ])
 })

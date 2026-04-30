@@ -46,9 +46,8 @@ test('FastifyPgBossOptions accepts every boss construction path', () => {
 test('FastifyPgBossOptions accepts typed worker objects and factories', () => {
   const worker = definePgBossWorker<CleanupJobData>({
     name: 'cleanup',
-    async handler(jobs, app) {
+    async handler(jobs) {
       expect(jobs[0]?.data.olderThanDays).type.toBe<number | undefined>()
-      expect(app).type.toBe<FastifyInstance>()
     },
   })
 

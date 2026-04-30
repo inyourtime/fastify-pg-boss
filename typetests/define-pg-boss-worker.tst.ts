@@ -25,17 +25,11 @@ test('definePgBossWorker accepts a plain worker handler', () => {
   expect(worker).type.toBeAssignableTo<PgBossWorkerDefinition<OnThisDayJobData>>()
 })
 
-test('definePgBossWorker accepts a Fastify-aware worker handler', () => {
-  const worker = definePgBossWorker<OnThisDayJobData>({
+test('definePgBossWorker rejects handlers that require the Fastify instance', () => {
+  expect<PgBossWorkerDefinition<OnThisDayJobData>>().type.not.toBeAssignableFrom({
     name: 'on-this-day',
-    async handler(jobs, app) {
-      expect(jobs).type.toBe<Job<OnThisDayJobData>[]>()
-      expect(app).type.toBe<FastifyInstance>()
-      expect(app.log.info).type.toBeCallableWith({ queue: jobs[0]?.name }, 'processing job')
-    },
+    async handler(_jobs: Job<OnThisDayJobData>[], _app: FastifyInstance) {},
   })
-
-  expect(worker).type.toBeAssignableTo<PgBossWorkerDefinition<OnThisDayJobData>>()
 })
 
 test('definePgBossWorker accepts a Fastify-aware worker factory', () => {
@@ -65,12 +59,11 @@ test('definePgBossWorker preserves metadata job handler types', () => {
     options: {
       includeMetadata: true,
     },
-    async handler(jobs, app) {
+    async handler(jobs) {
       expect(jobs).type.toBe<JobWithMetadata<OnThisDayJobData>[]>()
       expect(jobs[0]?.state).type.toBe<
         'created' | 'retry' | 'active' | 'completed' | 'cancelled' | 'failed' | undefined
       >()
-      expect(app).type.toBe<FastifyInstance>()
     },
   })
 
