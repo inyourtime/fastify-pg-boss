@@ -169,6 +169,27 @@ const boss = getPgBoss<Queues>(app)
 await boss.send('email/send', { userId: 'user_123' })
 ```
 
+You can type `fastify.pgBoss` globally by augmenting the package's `PgBossQueues`
+interface. This changes the decorator type for every Fastify instance in the
+TypeScript program. The queue map can also be derived from your workers, so you
+do not need to repeat the payload shapes.
+
+```ts
+const workers = [
+  definePgBossWorker<EmailJob>()({
+    name: 'email-worker',
+    queue: 'email/send',
+    async handler(jobs) {},
+  }),
+] as const
+
+declare module 'fastify-pg-boss' {
+  interface PgBossQueues extends PgBossQueuesFromWorkers<typeof workers> {}
+}
+
+await app.pgBoss?.send('email/send', { userId: 'user_123' })
+```
+
 ## Queues
 
 Use `queues` when you want the plugin to create queues before schedules and

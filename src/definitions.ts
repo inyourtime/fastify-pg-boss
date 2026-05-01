@@ -2,7 +2,6 @@ import type { FastifyInstance } from 'fastify'
 import type { PgBoss } from 'pg-boss'
 import type {
   PgBossQueueDefinition,
-  PgBossQueueMap,
   PgBossScheduleDefinition,
   PgBossWorkerDefinition,
   PgBossWorkerDefinitionFactory,
@@ -55,9 +54,7 @@ export function definePgBossWorker<ReqData extends object = object, ResData = an
 
 export function getPgBoss(fastify: FastifyInstance): PgBoss
 
-export function getPgBoss<Queues extends PgBossQueueMap>(
-  fastify: FastifyInstance,
-): TypedPgBoss<Queues>
+export function getPgBoss<Queues extends object>(fastify: FastifyInstance): TypedPgBoss<Queues>
 
 export function getPgBoss(fastify: FastifyInstance): PgBoss {
   if (!fastify.pgBoss) {

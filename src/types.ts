@@ -14,12 +14,6 @@ import type {
   WorkWithMetadataHandler,
 } from 'pg-boss'
 
-declare module 'fastify' {
-  interface FastifyInstance {
-    pgBoss: PgBoss | null
-  }
-}
-
 export type PgBossFactory = (fastify: FastifyInstance) => PgBoss | Promise<PgBoss>
 export type PgBossConstructorInput = string | ConstructorOptions
 
@@ -82,6 +76,9 @@ export type PgBossWorkWithMetadataHandler<ReqData, ResData = any> = WorkWithMeta
 >
 
 export type PgBossQueueMap = Record<string, object>
+
+// biome-ignore lint/suspicious/noEmptyInterface: Users can augment this interface to type fastify.pgBoss globally.
+export interface PgBossQueues {}
 
 export type PgBossWorkerDefinition<
   ReqData extends object = object,
@@ -181,30 +178,45 @@ export type PgBossQueuesFromWorkers<Workers extends readonly unknown[]> = Simpli
   UnionToIntersection<PgBossQueueFromWorker<Workers[number]>>
 >
 
+type PgBossQueueData<
+  Queues extends object,
+  QueueName extends keyof Queues & string,
+> = Queues[QueueName] extends object ? Queues[QueueName] : never
+
 export type PgBossTypedSendRequest<
-  Queues extends PgBossQueueMap,
+  Queues extends object,
   QueueName extends keyof Queues & string = keyof Queues & string,
 > = QueueName extends keyof Queues & string
   ? {
       name: QueueName
-      data: Queues[QueueName]
+      data: PgBossQueueData<Queues, QueueName>
       options?: SendOptions
     }
   : never
 
-export type PgBossTypedSend<Queues extends PgBossQueueMap> = {
+export type PgBossTypedSend<Queues extends object> = {
   <QueueName extends keyof Queues & string>(
     request: PgBossTypedSendRequest<Queues, QueueName>,
   ): Promise<string | null>
   <QueueName extends keyof Queues & string>(
     name: QueueName,
-    data: Queues[QueueName],
+    data: PgBossQueueData<Queues, QueueName>,
     options?: SendOptions,
   ): Promise<string | null>
 }
 
-export type TypedPgBoss<Queues extends PgBossQueueMap> = Omit<PgBoss, 'send'> & {
+export type TypedPgBoss<Queues extends object> = Omit<PgBoss, 'send'> & {
   send: PgBossTypedSend<Queues>
+}
+
+export type PgBossWithQueues<Queues extends object> = keyof Queues extends never
+  ? PgBoss
+  : TypedPgBoss<Queues>
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    pgBoss: PgBossWithQueues<PgBossQueues> | null
+  }
 }
 
 export type FastifyPgBossOptions = {

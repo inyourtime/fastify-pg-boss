@@ -18,6 +18,20 @@ type CleanupJob = {
 
 declare const app: FastifyInstance
 
+const globalWorkers = [
+  definePgBossWorker<EmailJob>()({
+    name: 'global-email-worker',
+    queue: 'global/email',
+    async handler(jobs) {
+      expect(jobs[0]?.data.userId).type.toBe<string | undefined>()
+    },
+  }),
+] as const
+
+declare module '../src/index.js' {
+  interface PgBossQueues extends PgBossQueuesFromWorkers<typeof globalWorkers> {}
+}
+
 test('PgBossQueuesFromWorkers derives queue names and payloads from workers', () => {
   const workers = [
     definePgBossWorker<EmailJob>()({
@@ -76,4 +90,17 @@ test('getPgBoss stays compatible with the untyped pg-boss API by default', () =>
 
   expect(boss).type.toBe<PgBoss>()
   expect(boss.send('anything')).type.toBe<Promise<string | null>>()
+})
+
+test('PgBossQueues module augmentation narrows the fastify pgBoss decorator globally', () => {
+  expect(app.pgBoss).type.toBe<TypedPgBoss<{ 'global/email': EmailJob }> | null>()
+  expect(app.pgBoss?.send('global/email', { userId: 'user_123' })).type.toBe<
+    Promise<string | null> | undefined
+  >()
+
+  // @ts-expect-error  Argument of type '"email/send"' is not assignable to parameter
+  app.pgBoss?.send('email/send', { userId: 'user_123' })
+
+  // @ts-expect-error  Type 'number' is not assignable to type 'string'.
+  app.pgBoss?.send('global/email', { userId: 123 })
 })
