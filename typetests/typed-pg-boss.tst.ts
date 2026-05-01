@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import type { PgBoss } from 'pg-boss'
+import type { PgBoss, SendOptions } from 'pg-boss'
 import { expect, test } from 'tstyche'
 import {
   definePgBossWorker,
@@ -85,6 +85,39 @@ test('typed getPgBoss narrows send queue names and payloads', () => {
   boss.send({ name: 'email/send', data: { olderThanDays: 30 } })
 })
 
+test('typed send accepts pg-boss SendOptions', () => {
+  type Queues = {
+    'email/send': EmailJob
+  }
+
+  const boss = getPgBoss<Queues>(app)
+  const options = {
+    priority: 3,
+    retryLimit: 5,
+    retryDelay: 30,
+    retryBackoff: true,
+    singletonKey: 'email:user_123',
+    expireInSeconds: 60,
+  } satisfies SendOptions
+
+  expect(boss.send('email/send', { userId: 'user_123' }, options)).type.toBe<
+    Promise<string | null>
+  >()
+  expect(
+    boss.send({
+      name: 'email/send',
+      data: { userId: 'user_123' },
+      options,
+    }),
+  ).type.toBe<Promise<string | null>>()
+  expect(app.pgBoss?.send('global/email', { userId: 'user_123' }, options)).type.toBe<
+    Promise<string | null> | undefined
+  >()
+  expect(
+    app.pgBoss?.send({ name: 'global/email', data: { userId: 'user_123' }, options }),
+  ).type.toBe<Promise<string | null> | undefined>()
+})
+
 test('getPgBoss stays compatible with the untyped pg-boss API by default', () => {
   const boss = getPgBoss(app)
 
@@ -97,10 +130,16 @@ test('PgBossQueues module augmentation narrows the fastify pgBoss decorator glob
   expect(app.pgBoss?.send('global/email', { userId: 'user_123' })).type.toBe<
     Promise<string | null> | undefined
   >()
+  expect(app.pgBoss?.send({ name: 'global/email', data: { userId: 'user_123' } })).type.toBe<
+    Promise<string | null> | undefined
+  >()
 
   // @ts-expect-error  Argument of type '"email/send"' is not assignable to parameter
   app.pgBoss?.send('email/send', { userId: 'user_123' })
 
   // @ts-expect-error  Type 'number' is not assignable to type 'string'.
   app.pgBoss?.send('global/email', { userId: 123 })
+
+  // @ts-expect-error  Object literal may only specify known properties
+  app.pgBoss?.send({ name: 'global/email', data: { olderThanDays: 30 } })
 })
