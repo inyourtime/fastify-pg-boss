@@ -6,6 +6,7 @@ import type {
   PgBoss,
   Queue,
   ScheduleOptions,
+  SendOptions,
   StopOptions,
   WipData,
   WorkHandler,
@@ -80,19 +81,26 @@ export type PgBossWorkWithMetadataHandler<ReqData, ResData = any> = WorkWithMeta
   ResData
 >
 
-export type PgBossWorkerDefinition<ReqData extends object = object, ResData = any> = {
+export type PgBossQueueMap = Record<string, object>
+
+export type PgBossWorkerDefinition<
+  ReqData extends object = object,
+  ResData = any,
+  QueueName extends string = string,
+  WorkerName extends string = string,
+> = {
   createQueue?: boolean
   enabled?: boolean
   /**
    * Human-readable worker name. Used as the queue name when queue is omitted.
    */
-  name: string
+  name: WorkerName
   offWorkOnClose?: boolean
   offWorkOptions?: OffWorkOptions
   /**
    * pg-boss queue name. Defaults to name for simple worker definitions.
    */
-  queue?: string
+  queue?: QueueName
   /**
    * Queue options used when createQueue is true or queueOptions is provided.
    */
@@ -114,13 +122,90 @@ export type PgBossWorkerDefinition<ReqData extends object = object, ResData = an
     }
 )
 
-export type PgBossWorkerDefinitionFactory<ReqData extends object = object, ResData = any> = (
-  fastify: FastifyInstance,
-) => PgBossWorkerDefinition<ReqData, ResData>
+export type PgBossWorkerDefinitionFactory<
+  ReqData extends object = object,
+  ResData = any,
+  QueueName extends string = string,
+  WorkerName extends string = string,
+> = (fastify: FastifyInstance) => PgBossWorkerDefinition<ReqData, ResData, QueueName, WorkerName>
 
-export type PgBossWorkerRegistration<ReqData extends object = object, ResData = any> =
-  | PgBossWorkerDefinition<ReqData, ResData>
-  | PgBossWorkerDefinitionFactory<ReqData, ResData>
+export type PgBossWorkerRegistration<
+  ReqData extends object = object,
+  ResData = any,
+  QueueName extends string = string,
+  WorkerName extends string = string,
+> =
+  | PgBossWorkerDefinition<ReqData, ResData, QueueName, WorkerName>
+  | PgBossWorkerDefinitionFactory<ReqData, ResData, QueueName, WorkerName>
+
+type Simplify<T> = {
+  [Key in keyof T]: T[Key]
+} & {}
+
+type UnionToIntersection<Union> = (Union extends unknown ? (value: Union) => void : never) extends (
+  value: infer Intersection,
+) => void
+  ? Intersection
+  : never
+
+type PgBossWorkerRequestData<Worker> =
+  Worker extends PgBossWorkerDefinition<infer ReqData, any, any, any>
+    ? ReqData
+    : Worker extends PgBossWorkerDefinitionFactory<infer ReqData, any, any, any>
+      ? ReqData
+      : Worker extends (fastify: FastifyInstance) => infer Definition
+        ? PgBossWorkerRequestData<Definition>
+        : never
+
+type PgBossWorkerQueueName<Worker> = Worker extends (fastify: FastifyInstance) => infer Definition
+  ? PgBossWorkerQueueName<Definition>
+  : Worker extends { queue: infer QueueName }
+    ? QueueName extends string
+      ? QueueName
+      : never
+    : Worker extends { name: infer WorkerName }
+      ? WorkerName extends string
+        ? WorkerName
+        : never
+      : never
+
+type PgBossQueueFromWorker<Worker> = Worker extends unknown
+  ? PgBossWorkerQueueName<Worker> extends infer QueueName extends string
+    ? {
+        [Name in QueueName]: PgBossWorkerRequestData<Worker>
+      }
+    : never
+  : never
+
+export type PgBossQueuesFromWorkers<Workers extends readonly unknown[]> = Simplify<
+  UnionToIntersection<PgBossQueueFromWorker<Workers[number]>>
+>
+
+export type PgBossTypedSendRequest<
+  Queues extends PgBossQueueMap,
+  QueueName extends keyof Queues & string = keyof Queues & string,
+> = QueueName extends keyof Queues & string
+  ? {
+      name: QueueName
+      data: Queues[QueueName]
+      options?: SendOptions
+    }
+  : never
+
+export type PgBossTypedSend<Queues extends PgBossQueueMap> = {
+  <QueueName extends keyof Queues & string>(
+    request: PgBossTypedSendRequest<Queues, QueueName>,
+  ): Promise<string | null>
+  <QueueName extends keyof Queues & string>(
+    name: QueueName,
+    data: Queues[QueueName],
+    options?: SendOptions,
+  ): Promise<string | null>
+}
+
+export type TypedPgBoss<Queues extends PgBossQueueMap> = Omit<PgBoss, 'send'> & {
+  send: PgBossTypedSend<Queues>
+}
 
 export type FastifyPgBossOptions = {
   /**

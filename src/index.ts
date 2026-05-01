@@ -13,7 +13,11 @@ export type {
   PgBossEventMap,
   PgBossFactory,
   PgBossQueueDefinition,
+  PgBossQueueMap,
+  PgBossQueuesFromWorkers,
   PgBossScheduleDefinition,
+  PgBossTypedSend,
+  PgBossTypedSendRequest,
   PgBossWarning,
   PgBossWorkerDefinition,
   PgBossWorkerDefinitionFactory,
@@ -21,4 +25,5 @@ export type {
   PgBossWorkerScheduleDefinition,
   PgBossWorkHandler,
   PgBossWorkWithMetadataHandler,
+  TypedPgBoss,
 } from './types.js'

@@ -2,10 +2,12 @@ import type { FastifyInstance } from 'fastify'
 import type { PgBoss } from 'pg-boss'
 import type {
   PgBossQueueDefinition,
+  PgBossQueueMap,
   PgBossScheduleDefinition,
   PgBossWorkerDefinition,
   PgBossWorkerDefinitionFactory,
   PgBossWorkerRegistration,
+  TypedPgBoss,
 } from './types.js'
 
 export function definePgBossQueue(definition: PgBossQueueDefinition): PgBossQueueDefinition {
@@ -18,6 +20,15 @@ export function definePgBossSchedule<Data extends object = object>(
   return definition
 }
 
+export function definePgBossWorker<ReqData extends object = object, ResData = any>(): {
+  <const Definition extends PgBossWorkerDefinition<ReqData, ResData>>(
+    definition: Definition,
+  ): Definition
+  <const Factory extends PgBossWorkerDefinitionFactory<ReqData, ResData>>(
+    definition: Factory,
+  ): Factory
+}
+
 export function definePgBossWorker<ReqData extends object = object, ResData = any>(
   definition: PgBossWorkerDefinition<ReqData, ResData>,
 ): PgBossWorkerDefinition<ReqData, ResData>
@@ -27,10 +38,26 @@ export function definePgBossWorker<ReqData extends object = object, ResData = an
 ): PgBossWorkerDefinitionFactory<ReqData, ResData>
 
 export function definePgBossWorker<ReqData extends object = object, ResData = any>(
-  definition: PgBossWorkerRegistration<ReqData, ResData>,
-): PgBossWorkerRegistration<ReqData, ResData> {
+  definition?: PgBossWorkerRegistration<ReqData, ResData>,
+):
+  | PgBossWorkerRegistration<ReqData, ResData>
+  | (<const Definition extends PgBossWorkerRegistration<ReqData, ResData>>(
+      definition: Definition,
+    ) => Definition) {
+  if (definition === undefined) {
+    return <const Definition extends PgBossWorkerRegistration<ReqData, ResData>>(
+      typedDefinition: Definition,
+    ) => typedDefinition
+  }
+
   return definition
 }
+
+export function getPgBoss(fastify: FastifyInstance): PgBoss
+
+export function getPgBoss<Queues extends PgBossQueueMap>(
+  fastify: FastifyInstance,
+): TypedPgBoss<Queues>
 
 export function getPgBoss(fastify: FastifyInstance): PgBoss {
   if (!fastify.pgBoss) {
