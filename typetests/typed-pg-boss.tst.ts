@@ -89,8 +89,7 @@ test('PgBossQueuesFromRegistry derives queue names and payloads from a queue reg
   expect(workers[0].queue).type.toBe<'email/send'>()
   expect(workers[1](app).queue).type.toBe<'cleanup'>()
 
-  // @ts-expect-error  Argument of type '"email/missing"' is not assignable to parameter
-  queues.worker('email/missing', {
+  expect(queues.worker).type.not.toBeCallableWith('email/missing', {
     name: 'missing-worker',
     async handler() {},
   })
@@ -103,22 +102,19 @@ test('PgBossQueuesFromRegistry derives queue names and payloads from a queue reg
     },
   })
 
-  // @ts-expect-error  No overload matches this call.
-  queues.worker('email/send', {
+  expect(queues.worker).type.not.toBeCallableWith('email/send', {
     name: 'queue-override-worker',
     queue: 'other',
     async handler() {},
   })
 
-  // @ts-expect-error  No overload matches this call.
-  queues.worker('email/send', {
+  expect(queues.worker).type.not.toBeCallableWith('email/send', {
     name: 'create-queue-override-worker',
     createQueue: true,
     async handler() {},
   })
 
-  // @ts-expect-error  No overload matches this call.
-  queues.worker('email/send', {
+  expect(queues.worker).type.not.toBeCallableWith('email/send', {
     name: 'queue-options-override-worker',
     queueOptions: {
       retryLimit: 9,
@@ -126,22 +122,19 @@ test('PgBossQueuesFromRegistry derives queue names and payloads from a queue reg
     async handler() {},
   })
 
-  // @ts-expect-error  No overload matches this call.
-  queues.worker('email/send', () => ({
+  expect(queues.worker).type.not.toBeCallableWith('email/send', () => ({
     name: 'factory-queue-override-worker',
     queue: 'other',
     async handler() {},
   }))
 
-  // @ts-expect-error  No overload matches this call.
-  queues.worker('email/send', () => ({
+  expect(queues.worker).type.not.toBeCallableWith('email/send', () => ({
     name: 'factory-create-queue-override-worker',
     createQueue: true,
     async handler() {},
   }))
 
-  // @ts-expect-error  No overload matches this call.
-  queues.worker('email/send', () => ({
+  expect(queues.worker).type.not.toBeCallableWith('email/send', () => ({
     name: 'factory-queue-options-override-worker',
     queueOptions: {
       retryLimit: 9,
