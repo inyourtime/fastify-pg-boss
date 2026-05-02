@@ -29,7 +29,11 @@ npm install fastify-pg-boss pg-boss
 
 ```ts
 import Fastify from 'fastify'
-import fastifyPgBoss, { definePgBossWorker, getPgBoss } from 'fastify-pg-boss'
+import fastifyPgBoss, {
+  definePgBossWorker,
+  getPgBoss,
+  type PgBossQueuesFromWorkers,
+} from 'fastify-pg-boss'
 
 const app = Fastify({ logger: true })
 
@@ -37,26 +41,30 @@ type EmailJob = {
   userId: string
 }
 
+const workers = [
+  definePgBossWorker<EmailJob>()({
+    name: 'email-worker',
+    queue: 'email/send',
+    createQueue: true,
+    options: {
+      pollingIntervalSeconds: 10,
+    },
+    async handler(jobs) {
+      for (const job of jobs) {
+        app.log.info({ jobId: job.id, userId: job.data.userId }, 'sending email')
+      }
+    },
+  }),
+] as const
+
+type Queues = PgBossQueuesFromWorkers<typeof workers>
+
 await app.register(fastifyPgBoss, {
   connectionString: process.env.POSTGRES_URL,
-  workers: [
-    definePgBossWorker<EmailJob>({
-      name: 'email-worker',
-      queue: 'email/send',
-      createQueue: true,
-      options: {
-        pollingIntervalSeconds: 10,
-      },
-      async handler(jobs) {
-        for (const job of jobs) {
-          app.log.info({ jobId: job.id, userId: job.data.userId }, 'sending email')
-        }
-      },
-    }),
-  ],
+  workers,
 })
 
-await getPgBoss(app).send('email/send', {
+await getPgBoss<Queues>(app).send('email/send', {
   userId: 'user_123',
 })
 ```
@@ -139,6 +147,47 @@ import { getPgBoss } from 'fastify-pg-boss'
 
 const boss = getPgBoss(app)
 await boss.send('queue-name', { ok: true })
+```
+
+Use `getPgBoss<Queues>(app)` when you want TypeScript to narrow `send()` to your
+known queues. `PgBossQueuesFromWorkers` can derive that map from workers defined
+with the curried `definePgBossWorker<Data>()({...})` form, which preserves the
+literal queue names.
+
+```ts
+const workers = [
+  definePgBossWorker<EmailJob>()({
+    name: 'email-worker',
+    queue: 'email/send',
+    async handler(jobs) {},
+  }),
+] as const
+
+type Queues = PgBossQueuesFromWorkers<typeof workers>
+
+const boss = getPgBoss<Queues>(app)
+await boss.send('email/send', { userId: 'user_123' })
+```
+
+You can type `fastify.pgBoss` globally by augmenting the package's `PgBossQueues`
+interface. This changes the decorator type for every Fastify instance in the
+TypeScript program. The queue map can also be derived from your workers, so you
+do not need to repeat the payload shapes.
+
+```ts
+const workers = [
+  definePgBossWorker<EmailJob>()({
+    name: 'email-worker',
+    queue: 'email/send',
+    async handler(jobs) {},
+  }),
+] as const
+
+declare module 'fastify-pg-boss' {
+  interface PgBossQueues extends PgBossQueuesFromWorkers<typeof workers> {}
+}
+
+await app.pgBoss?.send('email/send', { userId: 'user_123' })
 ```
 
 ## Queues

@@ -93,6 +93,8 @@ test('definition helpers return the provided definitions', () => {
   assert.equal(definePgBossSchedule(schedule), schedule)
   assert.equal(definePgBossWorker(worker), worker)
   assert.equal(definePgBossWorker(workerFactory), workerFactory)
+  assert.equal(definePgBossWorker()(worker), worker)
+  assert.equal(definePgBossWorker()(workerFactory), workerFactory)
 })
 
 test('resolves worker definition factories with the fastify instance', async (t) => {
