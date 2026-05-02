@@ -90,7 +90,15 @@ test('definition helpers return the provided definitions', () => {
   const queueConfig = { create: true, options: { retryLimit: 1 } }
   const schedule = { cron: '* * * * *', name: 'queue' }
   const worker = { async handler() {}, name: 'queue' }
+  const workerWithQueueOverrides = {
+    async handler() {},
+    createQueue: true,
+    name: 'queue',
+    queue: 'other',
+    queueOptions: { retryLimit: 9 },
+  }
   const workerFactory = () => worker
+  const workerFactoryWithQueueOverrides = () => workerWithQueueOverrides
   const queueRegistry = definePgBossQueues({
     existing: { create: false },
     noOptions: { create: true },
@@ -113,6 +121,16 @@ test('definition helpers return the provided definitions', () => {
   })
   assert.deepEqual(queueRegistry.worker('queue', workerFactory)({}), {
     ...worker,
+    queue: 'queue',
+  })
+  assert.deepEqual(queueRegistry.worker('queue', workerWithQueueOverrides), {
+    handler: workerWithQueueOverrides.handler,
+    name: 'queue',
+    queue: 'queue',
+  })
+  assert.deepEqual(queueRegistry.worker('queue', workerFactoryWithQueueOverrides)({}), {
+    handler: workerWithQueueOverrides.handler,
+    name: 'queue',
     queue: 'queue',
   })
   assert.deepEqual(queue(queueConfig), queueConfig)

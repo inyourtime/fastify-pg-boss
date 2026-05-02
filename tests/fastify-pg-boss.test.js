@@ -272,6 +272,49 @@ test('registers typed queue registry worker factories', async (t) => {
   assert.deepEqual(jobs[0].data, { userId: 'user_factory' })
 })
 
+test('registry workers ignore queue creation overrides at runtime', async (t) => {
+  const app = Fastify({ logger: false })
+  t.after(() => app.close())
+  const schema = createSchemaName()
+  const queueName = `${schema}/registry-authoritative`
+  const overriddenQueueName = `${schema}/registry-worker-override`
+  const queues = definePgBossQueues({
+    [queueName]: queue({
+      create: true,
+      options: {
+        retryLimit: 2,
+      },
+    }),
+  })
+
+  await app.register(fastifyPgBoss, {
+    constructorOptions: {
+      connectionString,
+      schema,
+    },
+    queueRegistry: queues,
+    workers: [
+      queues.worker(queueName, {
+        async handler() {},
+        createQueue: true,
+        name: 'registry-authoritative-worker',
+        queue: overriddenQueueName,
+        queueOptions: {
+          retryLimit: 9,
+        },
+      }),
+    ],
+  })
+
+  const boss = getPgBoss(app)
+  const registeredQueue = await boss.getQueue(queueName)
+  const overriddenQueue = await boss.getQueue(overriddenQueueName)
+
+  assert.equal(registeredQueue?.name, queueName)
+  assert.equal(registeredQueue?.retryLimit, 2)
+  assert.equal(overriddenQueue, null)
+})
+
 test('worker factories can access the fastify instance during registration', async (t) => {
   const app = Fastify({ logger: false })
   t.after(() => app.close())

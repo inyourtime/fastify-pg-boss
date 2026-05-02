@@ -109,6 +109,45 @@ test('PgBossQueuesFromRegistry derives queue names and payloads from a queue reg
     queue: 'other',
     async handler() {},
   })
+
+  // @ts-expect-error  No overload matches this call.
+  queues.worker('email/send', {
+    name: 'create-queue-override-worker',
+    createQueue: true,
+    async handler() {},
+  })
+
+  // @ts-expect-error  No overload matches this call.
+  queues.worker('email/send', {
+    name: 'queue-options-override-worker',
+    queueOptions: {
+      retryLimit: 9,
+    },
+    async handler() {},
+  })
+
+  // @ts-expect-error  No overload matches this call.
+  queues.worker('email/send', () => ({
+    name: 'factory-queue-override-worker',
+    queue: 'other',
+    async handler() {},
+  }))
+
+  // @ts-expect-error  No overload matches this call.
+  queues.worker('email/send', () => ({
+    name: 'factory-create-queue-override-worker',
+    createQueue: true,
+    async handler() {},
+  }))
+
+  // @ts-expect-error  No overload matches this call.
+  queues.worker('email/send', () => ({
+    name: 'factory-queue-options-override-worker',
+    queueOptions: {
+      retryLimit: 9,
+    },
+    async handler() {},
+  }))
 })
 
 test('typed send accepts pg-boss SendOptions', () => {

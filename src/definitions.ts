@@ -43,11 +43,22 @@ function getQueueDefinition(
 function applyQueueDefinition<Definition extends object>(
   name: string,
   workerDefinition: Definition,
-): Definition & {
+): Omit<Definition, 'createQueue' | 'queue' | 'queueOptions'> & {
   queue: string
 } {
+  const {
+    createQueue: _createQueue,
+    queue: _queue,
+    queueOptions: _queueOptions,
+    ...definition
+  } = workerDefinition as Definition & {
+    createQueue?: unknown
+    queue?: unknown
+    queueOptions?: unknown
+  }
+
   return {
-    ...workerDefinition,
+    ...definition,
     queue: name,
   }
 }
