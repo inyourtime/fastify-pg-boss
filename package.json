@@ -1,6 +1,6 @@
 {
   "name": "fastify-pg-boss",
-  "version": "1.0.0-0",
+  "version": "1.0.0-1",
   "description": "Fastify plugin that wires pg-boss into your app with typed queues, schedules, and workers.",
   "type": "module",
   "main": "./dist/index.js",
