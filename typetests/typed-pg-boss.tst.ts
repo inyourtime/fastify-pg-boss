@@ -2,9 +2,10 @@ import type { FastifyInstance } from 'fastify'
 import type { PgBoss, SendOptions } from 'pg-boss'
 import { expect, test } from 'tstyche'
 import {
-  definePgBossWorker,
+  definePgBossQueues,
   getPgBoss,
-  type PgBossQueuesFromWorkers,
+  type PgBossQueuesFromRegistry,
+  queue,
   type TypedPgBoss,
 } from '../src/index.js'
 
@@ -18,56 +19,13 @@ type CleanupJob = {
 
 declare const app: FastifyInstance
 
-const globalWorkers = [
-  definePgBossWorker<EmailJob>()({
-    name: 'global-email-worker',
-    queue: 'global/email',
-    async handler(jobs) {
-      expect(jobs[0]?.data.userId).type.toBe<string | undefined>()
-    },
-  }),
-] as const
+const globalQueues = definePgBossQueues({
+  'global/email': queue<EmailJob>({ create: true }),
+})
 
 declare module '../src/index.js' {
-  interface PgBossQueues extends PgBossQueuesFromWorkers<typeof globalWorkers> {}
+  interface PgBossQueues extends PgBossQueuesFromRegistry<typeof globalQueues> {}
 }
-
-test('PgBossQueuesFromWorkers derives queue names and payloads from workers', () => {
-  const workers = [
-    definePgBossWorker<EmailJob>()({
-      name: 'email-worker',
-      queue: 'email/send',
-      async handler(jobs) {
-        expect(jobs[0]?.data.userId).type.toBe<string | undefined>()
-      },
-    }),
-    definePgBossWorker<CleanupJob>()({
-      name: 'cleanup',
-      async handler(jobs) {
-        expect(jobs[0]?.data.olderThanDays).type.toBe<number | undefined>()
-      },
-    }),
-    definePgBossWorker<EmailJob>()((workerApp) => {
-      expect(workerApp).type.toBe<FastifyInstance>()
-
-      return {
-        name: 'welcome-email-worker',
-        queue: 'email/welcome',
-        async handler(jobs) {
-          expect(jobs[0]?.data.userId).type.toBe<string | undefined>()
-        },
-      }
-    }),
-  ] as const
-
-  type Queues = PgBossQueuesFromWorkers<typeof workers>
-
-  expect<Queues>().type.toBe<{
-    'email/send': EmailJob
-    cleanup: CleanupJob
-    'email/welcome': EmailJob
-  }>()
-})
 
 test('typed getPgBoss narrows send queue names and payloads', () => {
   type Queues = {
@@ -95,6 +53,94 @@ test('typed getPgBoss narrows send queue names and payloads', () => {
 
   // @ts-expect-error  Object literal may only specify known properties
   boss.send({ name: 'email/send', data: { olderThanDays: 30 } })
+})
+
+test('PgBossQueuesFromRegistry derives queue names and payloads from a queue registry', () => {
+  const queues = definePgBossQueues({
+    'email/send': queue<EmailJob>({ create: true }),
+    cleanup: queue<CleanupJob>({ create: false }),
+  })
+
+  const workers = [
+    queues.worker('email/send', {
+      name: 'email-worker',
+      async handler(jobs) {
+        expect(jobs[0]?.data.userId).type.toBe<string | undefined>()
+      },
+    }),
+    queues.worker('cleanup', (workerApp) => {
+      expect(workerApp).type.toBe<FastifyInstance>()
+
+      return {
+        name: 'cleanup-worker',
+        async handler(jobs) {
+          expect(jobs[0]?.data.olderThanDays).type.toBe<number | undefined>()
+        },
+      }
+    }),
+  ] as const
+
+  type Queues = PgBossQueuesFromRegistry<typeof queues>
+
+  expect<Queues>().type.toBe<{
+    'email/send': EmailJob
+    cleanup: CleanupJob
+  }>()
+  expect(workers[0].queue).type.toBe<'email/send'>()
+  expect(workers[1](app).queue).type.toBe<'cleanup'>()
+
+  expect(queues.worker).type.not.toBeCallableWith('email/missing', {
+    name: 'missing-worker',
+    async handler() {},
+  })
+
+  queues.worker('email/send', {
+    name: 'invalid-email-worker',
+    async handler(jobs) {
+      // @ts-expect-error  Property 'olderThanDays' does not exist on type 'EmailJob'.
+      jobs[0]?.data.olderThanDays
+    },
+  })
+
+  expect(queues.worker).type.not.toBeCallableWith('email/send', {
+    name: 'queue-override-worker',
+    queue: 'other',
+    async handler() {},
+  })
+
+  expect(queues.worker).type.not.toBeCallableWith('email/send', {
+    name: 'create-queue-override-worker',
+    createQueue: true,
+    async handler() {},
+  })
+
+  expect(queues.worker).type.not.toBeCallableWith('email/send', {
+    name: 'queue-options-override-worker',
+    queueOptions: {
+      retryLimit: 9,
+    },
+    async handler() {},
+  })
+
+  expect(queues.worker).type.not.toBeCallableWith('email/send', () => ({
+    name: 'factory-queue-override-worker',
+    queue: 'other',
+    async handler() {},
+  }))
+
+  expect(queues.worker).type.not.toBeCallableWith('email/send', () => ({
+    name: 'factory-create-queue-override-worker',
+    createQueue: true,
+    async handler() {},
+  }))
+
+  expect(queues.worker).type.not.toBeCallableWith('email/send', () => ({
+    name: 'factory-queue-options-override-worker',
+    queueOptions: {
+      retryLimit: 9,
+    },
+    async handler() {},
+  }))
 })
 
 test('typed send accepts pg-boss SendOptions', () => {

@@ -41,14 +41,28 @@ export type PgBossEventHandlers = {
 
 export type PgBossQueueDefinition = string | Queue
 
-export type PgBossScheduleDefinition<Data extends object = object> = {
-  data?: Data | null
-  enabled?: boolean
-  key?: string
-  name: string
-  options?: ScheduleOptions
-  cron: string
+export type PgBossQueueConfig<Data extends object = object> = {
+  /**
+   * Create this queue during plugin registration or worker registration.
+   * When false, the queue must already exist at runtime.
+   */
+  create?: boolean
+  /**
+   * Queue options used when create is true.
+   */
+  options?: Omit<Queue, 'name'>
+  /**
+   * Phantom field used only to carry the queue payload type.
+   */
+  readonly __data?: Data
 }
+
+export type PgBossQueueRegistry = Record<string, PgBossQueueConfig<any>>
+
+type PgBossRegistryQueueData<Definition> =
+  Definition extends PgBossQueueConfig<infer Data extends object> ? Data : never
+
+type DistributiveOmit<Type, Key extends keyof any> = Type extends unknown ? Omit<Type, Key> : never
 
 export type PgBossWorkerScheduleDefinition<Data extends object = object> =
   | string
@@ -75,33 +89,14 @@ export type PgBossWorkWithMetadataHandler<ReqData, ResData = any> = WorkWithMeta
   ResData
 >
 
-export type PgBossQueueMap = Record<string, object>
-
-// biome-ignore lint/suspicious/noEmptyInterface: Users can augment this interface to type fastify.pgBoss globally.
-export interface PgBossQueues {}
-
-export type PgBossWorkerDefinition<
-  ReqData extends object = object,
-  ResData = any,
-  QueueName extends string = string,
-  WorkerName extends string = string,
-> = {
-  createQueue?: boolean
+type PgBossWorkerBaseDefinition<ReqData extends object = object, ResData = any> = {
   enabled?: boolean
   /**
-   * Human-readable worker name. Used as the queue name when queue is omitted.
+   * Human-readable worker name.
    */
-  name: WorkerName
+  name: string
   offWorkOnClose?: boolean
   offWorkOptions?: OffWorkOptions
-  /**
-   * pg-boss queue name. Defaults to name for simple worker definitions.
-   */
-  queue?: QueueName
-  /**
-   * Queue options used when createQueue is true or queueOptions is provided.
-   */
-  queueOptions?: Omit<Queue, 'name'>
   /**
    * Schedule this worker's queue without declaring a separate schedules entry.
    */
@@ -119,64 +114,97 @@ export type PgBossWorkerDefinition<
     }
 )
 
-export type PgBossWorkerDefinitionFactory<
-  ReqData extends object = object,
+export type PgBossQueueRegistryWorkerOptions<
+  Registry extends PgBossQueueRegistry,
+  QueueName extends keyof Registry & string,
   ResData = any,
-  QueueName extends string = string,
-  WorkerName extends string = string,
-> = (fastify: FastifyInstance) => PgBossWorkerDefinition<ReqData, ResData, QueueName, WorkerName>
+> = PgBossWorkerBaseDefinition<PgBossRegistryQueueData<Registry[QueueName]>, ResData> & {
+  createQueue?: never
+  queue?: never
+  queueOptions?: never
+}
 
-export type PgBossWorkerRegistration<
-  ReqData extends object = object,
+export type PgBossQueueRegistryWorker<
+  Registry extends PgBossQueueRegistry,
+  QueueName extends keyof Registry & string,
   ResData = any,
-  QueueName extends string = string,
-  WorkerName extends string = string,
-> =
-  | PgBossWorkerDefinition<ReqData, ResData, QueueName, WorkerName>
-  | PgBossWorkerDefinitionFactory<ReqData, ResData, QueueName, WorkerName>
+> = DistributiveOmit<
+  PgBossWorkerDefinition<PgBossRegistryQueueData<Registry[QueueName]>, ResData>,
+  'queue'
+> & {
+  queue: QueueName
+}
 
-type Simplify<T> = {
-  [Key in keyof T]: T[Key]
-} & {}
+export type PgBossQueueRegistryWorkerFactory<
+  Registry extends PgBossQueueRegistry,
+  QueueName extends keyof Registry & string,
+  ResData = any,
+> = (fastify: FastifyInstance) => PgBossQueueRegistryWorker<Registry, QueueName, ResData>
 
-type UnionToIntersection<Union> = (Union extends unknown ? (value: Union) => void : never) extends (
-  value: infer Intersection,
-) => void
-  ? Intersection
-  : never
+export type PgBossDefinedQueueRegistry<Registry extends PgBossQueueRegistry> = {
+  readonly queues: Registry
+  readonly definitions: readonly PgBossQueueDefinition[]
+  worker: {
+    <const QueueName extends keyof Registry & string, ResData = any>(
+      name: QueueName,
+      definition: PgBossQueueRegistryWorkerOptions<Registry, QueueName, ResData>,
+    ): PgBossQueueRegistryWorker<Registry, QueueName, ResData>
+    <const QueueName extends keyof Registry & string, ResData = any>(
+      name: QueueName,
+      definition: (
+        fastify: FastifyInstance,
+      ) => PgBossQueueRegistryWorkerOptions<Registry, QueueName, ResData>,
+    ): PgBossQueueRegistryWorkerFactory<Registry, QueueName, ResData>
+  }
+}
 
-type PgBossWorkerRequestData<Worker> =
-  Worker extends PgBossWorkerDefinition<infer ReqData, any, any, any>
-    ? ReqData
-    : Worker extends PgBossWorkerDefinitionFactory<infer ReqData, any, any, any>
-      ? ReqData
-      : Worker extends (fastify: FastifyInstance) => infer Definition
-        ? PgBossWorkerRequestData<Definition>
-        : never
-
-type PgBossWorkerQueueName<Worker> = Worker extends (fastify: FastifyInstance) => infer Definition
-  ? PgBossWorkerQueueName<Definition>
-  : Worker extends { queue: infer QueueName }
-    ? QueueName extends string
-      ? QueueName
-      : never
-    : Worker extends { name: infer WorkerName }
-      ? WorkerName extends string
-        ? WorkerName
-        : never
-      : never
-
-type PgBossQueueFromWorker<Worker> = Worker extends unknown
-  ? PgBossWorkerQueueName<Worker> extends infer QueueName extends string
+export type PgBossQueuesFromRegistry<Registry> =
+  Registry extends PgBossDefinedQueueRegistry<infer Definitions>
     ? {
-        [Name in QueueName]: PgBossWorkerRequestData<Worker>
+        [QueueName in keyof Definitions & string]: PgBossRegistryQueueData<Definitions[QueueName]>
       }
-    : never
-  : never
+    : Registry extends PgBossQueueRegistry
+      ? {
+          [QueueName in keyof Registry & string]: PgBossRegistryQueueData<Registry[QueueName]>
+        }
+      : never
 
-export type PgBossQueuesFromWorkers<Workers extends readonly unknown[]> = Simplify<
-  UnionToIntersection<PgBossQueueFromWorker<Workers[number]>>
->
+export type PgBossScheduleDefinition<Data extends object = object> = {
+  data?: Data | null
+  enabled?: boolean
+  key?: string
+  name: string
+  options?: ScheduleOptions
+  cron: string
+}
+
+export type PgBossQueueMap = Record<string, object>
+
+// biome-ignore lint/suspicious/noEmptyInterface: Users can augment this interface to type fastify.pgBoss globally.
+export interface PgBossQueues {}
+
+export type PgBossWorkerDefinition<
+  ReqData extends object = object,
+  ResData = any,
+> = PgBossWorkerBaseDefinition<ReqData, ResData> & {
+  createQueue?: boolean
+  /**
+   * pg-boss queue name. Defaults to name for simple worker definitions.
+   */
+  queue?: string
+  /**
+   * Queue options used when createQueue is true or queueOptions is provided.
+   */
+  queueOptions?: Omit<Queue, 'name'>
+}
+
+export type PgBossWorkerDefinitionFactory<ReqData extends object = object, ResData = any> = (
+  fastify: FastifyInstance,
+) => PgBossWorkerDefinition<ReqData, ResData>
+
+export type PgBossWorkerRegistration<ReqData extends object = object, ResData = any> =
+  | PgBossWorkerDefinition<ReqData, ResData>
+  | PgBossWorkerDefinitionFactory<ReqData, ResData>
 
 type PgBossQueueData<
   Queues extends object,
@@ -245,6 +273,10 @@ export type FastifyPgBossOptions = {
    * Register queues before schedules and workers.
    */
   queues?: readonly PgBossQueueDefinition[]
+  /**
+   * Typed queue registry used to create queues and derive worker/send payload types.
+   */
+  queueRegistry?: PgBossDefinedQueueRegistry<any>
   /**
    * Register schedules before workers.
    */

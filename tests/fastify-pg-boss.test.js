@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import { before, test } from 'node:test'
 import Fastify from 'fastify'
-import fastifyPgBoss, { definePgBossWorker, getPgBoss } from '../dist/index.js'
+import fastifyPgBoss, {
+  definePgBossQueues,
+  definePgBossWorker,
+  getPgBoss,
+  queue,
+} from '../dist/index.js'
 import {
   assertDatabaseAvailable,
   connectionString,
@@ -155,6 +160,192 @@ test('registers worker queues, worker schedules, and processes jobs', async (t) 
   assert.equal(jobs.length, 1)
   assert.equal(jobs[0].name, queue)
   assert.deepEqual(jobs[0].data, { hello: 'world' })
+})
+
+test('registers typed queue registries and registry workers', async (t) => {
+  const app = Fastify({ logger: false })
+  t.after(() => app.close())
+  const schema = createSchemaName()
+  const queueName = `${schema}/registry-email`
+  const queues = definePgBossQueues({
+    [queueName]: queue({
+      create: true,
+      options: {
+        retryLimit: 4,
+      },
+    }),
+  })
+
+  let resolveProcessed
+  const processed = new Promise((resolve) => {
+    resolveProcessed = resolve
+  })
+
+  await app.register(fastifyPgBoss, {
+    constructorOptions: {
+      connectionString,
+      schema,
+    },
+    queueRegistry: queues,
+    workers: [
+      queues.worker(queueName, {
+        name: 'registry-email-worker',
+        options: {
+          pollingIntervalSeconds: 0.5,
+        },
+        async handler(jobs) {
+          resolveProcessed(jobs)
+        },
+      }),
+    ],
+  })
+
+  const boss = getPgBoss(app)
+  const registeredQueue = await boss.getQueue(queueName)
+
+  assert.equal(registeredQueue?.name, queueName)
+  assert.equal(registeredQueue?.retryLimit, 4)
+
+  const jobId = await boss.send(queueName, { userId: 'user_123' })
+  const jobs = await waitFor(processed, 10_000, 'registry worker did not process job')
+
+  assert.equal(typeof jobId, 'string')
+  assert.equal(jobs.length, 1)
+  assert.equal(jobs[0].name, queueName)
+  assert.deepEqual(jobs[0].data, { userId: 'user_123' })
+})
+
+test('registry queue options cannot override registry queue names', async (t) => {
+  const app = Fastify({ logger: false })
+  t.after(() => app.close())
+  const schema = createSchemaName()
+  const queueName = `${schema}/registry-options-name`
+  const optionsQueueName = `${schema}/options-name-override`
+  const queues = definePgBossQueues({
+    [queueName]: queue({
+      create: true,
+      options: {
+        name: optionsQueueName,
+        retryLimit: 7,
+      },
+    }),
+  })
+
+  await app.register(fastifyPgBoss, {
+    constructorOptions: {
+      connectionString,
+      schema,
+    },
+    queueRegistry: queues,
+  })
+
+  const boss = getPgBoss(app)
+  const registeredQueue = await boss.getQueue(queueName)
+  const overriddenQueue = await boss.getQueue(optionsQueueName)
+
+  assert.equal(registeredQueue?.name, queueName)
+  assert.equal(registeredQueue?.retryLimit, 7)
+  assert.equal(overriddenQueue, null)
+})
+
+test('registers typed queue registry worker factories', async (t) => {
+  const app = Fastify({ logger: false })
+  t.after(() => app.close())
+  const schema = createSchemaName()
+  const queueName = `${schema}/registry-factory-email`
+  const queues = definePgBossQueues({
+    [queueName]: queue({
+      create: true,
+      options: {
+        retryLimit: 6,
+      },
+    }),
+  })
+
+  let resolveProcessed
+  const processed = new Promise((resolve) => {
+    resolveProcessed = resolve
+  })
+
+  await app.register(fastifyPgBoss, {
+    constructorOptions: {
+      connectionString,
+      schema,
+    },
+    queueRegistry: queues,
+    workers: [
+      queues.worker(queueName, (workerApp) => {
+        assert.equal(workerApp, app)
+
+        return {
+          name: 'registry-factory-email-worker',
+          options: {
+            pollingIntervalSeconds: 0.5,
+          },
+          async handler(jobs) {
+            resolveProcessed(jobs)
+          },
+        }
+      }),
+    ],
+  })
+
+  const boss = getPgBoss(app)
+  const registeredQueue = await boss.getQueue(queueName)
+
+  assert.equal(registeredQueue?.name, queueName)
+  assert.equal(registeredQueue?.retryLimit, 6)
+
+  const jobId = await boss.send(queueName, { userId: 'user_factory' })
+  const jobs = await waitFor(processed, 10_000, 'registry worker factory did not process job')
+
+  assert.equal(typeof jobId, 'string')
+  assert.equal(jobs.length, 1)
+  assert.equal(jobs[0].name, queueName)
+  assert.deepEqual(jobs[0].data, { userId: 'user_factory' })
+})
+
+test('registry workers ignore queue creation overrides at runtime', async (t) => {
+  const app = Fastify({ logger: false })
+  t.after(() => app.close())
+  const schema = createSchemaName()
+  const queueName = `${schema}/registry-authoritative`
+  const overriddenQueueName = `${schema}/registry-worker-override`
+  const queues = definePgBossQueues({
+    [queueName]: queue({
+      create: true,
+      options: {
+        retryLimit: 2,
+      },
+    }),
+  })
+
+  await app.register(fastifyPgBoss, {
+    constructorOptions: {
+      connectionString,
+      schema,
+    },
+    queueRegistry: queues,
+    workers: [
+      queues.worker(queueName, {
+        async handler() {},
+        createQueue: true,
+        name: 'registry-authoritative-worker',
+        queue: overriddenQueueName,
+        queueOptions: {
+          retryLimit: 9,
+        },
+      }),
+    ],
+  })
+
+  const boss = getPgBoss(app)
+  const registeredQueue = await boss.getQueue(queueName)
+  const overriddenQueue = await boss.getQueue(overriddenQueueName)
+
+  assert.equal(registeredQueue?.name, queueName)
+  assert.equal(registeredQueue?.retryLimit, 2)
+  assert.equal(overriddenQueue, null)
 })
 
 test('worker factories can access the fastify instance during registration', async (t) => {

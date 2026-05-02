@@ -6,8 +6,10 @@ import { PgBoss } from 'pg-boss'
 import pino from 'pino'
 import fastifyPgBoss, {
   definePgBossQueue,
+  definePgBossQueues,
   definePgBossSchedule,
   definePgBossWorker,
+  queue,
 } from '../dist/index.js'
 import {
   attachPgBossEventHandlers,
@@ -84,12 +86,56 @@ async function assertStartsAgainstPostgres(t, boss) {
 }
 
 test('definition helpers return the provided definitions', () => {
-  const queue = { name: 'queue', retryLimit: 1 }
+  const queueDefinition = { name: 'queue', retryLimit: 1 }
+  const queueConfig = { create: true, options: { retryLimit: 1 } }
   const schedule = { cron: '* * * * *', name: 'queue' }
   const worker = { async handler() {}, name: 'queue' }
+  const workerWithQueueOverrides = {
+    async handler() {},
+    createQueue: true,
+    name: 'queue',
+    queue: 'other',
+    queueOptions: { retryLimit: 9 },
+  }
   const workerFactory = () => worker
+  const workerFactoryWithQueueOverrides = () => workerWithQueueOverrides
+  const queueRegistry = definePgBossQueues({
+    existing: { create: false },
+    noOptions: { create: true },
+    queue: queueConfig,
+    registryName: { create: true, options: { name: 'optionsName', retryLimit: 3 } },
+  })
 
-  assert.equal(definePgBossQueue(queue), queue)
+  assert.equal(definePgBossQueue(queueDefinition), queueDefinition)
+  assert.equal(queueRegistry.queues.queue, queueConfig)
+  assert.deepEqual(queueRegistry.definitions, [
+    { name: 'noOptions' },
+    { name: 'queue', retryLimit: 1 },
+    { name: 'registryName', retryLimit: 3 },
+  ])
+  assert.deepEqual(queueRegistry.worker('existing', worker), {
+    ...worker,
+    queue: 'existing',
+  })
+  assert.deepEqual(queueRegistry.worker('queue', worker), {
+    ...worker,
+    queue: 'queue',
+  })
+  assert.deepEqual(queueRegistry.worker('queue', workerFactory)({}), {
+    ...worker,
+    queue: 'queue',
+  })
+  assert.deepEqual(queueRegistry.worker('queue', workerWithQueueOverrides), {
+    handler: workerWithQueueOverrides.handler,
+    name: 'queue',
+    queue: 'queue',
+  })
+  assert.deepEqual(queueRegistry.worker('queue', workerFactoryWithQueueOverrides)({}), {
+    handler: workerWithQueueOverrides.handler,
+    name: 'queue',
+    queue: 'queue',
+  })
+  assert.deepEqual(queue(queueConfig), queueConfig)
   assert.equal(definePgBossSchedule(schedule), schedule)
   assert.equal(definePgBossWorker(worker), worker)
   assert.equal(definePgBossWorker(workerFactory), workerFactory)

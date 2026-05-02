@@ -36,6 +36,10 @@ const plugin: FastifyPluginAsync<FastifyPgBossOptions> = async (fastify, options
     await registerQueue(boss, queue)
   }
 
+  for (const queue of options.queueRegistry?.definitions ?? []) {
+    await registerQueue(boss, queue)
+  }
+
   for (const schedule of options.schedules ?? []) {
     await registerSchedule(boss, schedule)
   }

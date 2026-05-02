@@ -1,7 +1,10 @@
 import type { FastifyInstance } from 'fastify'
 import type { PgBoss } from 'pg-boss'
 import type {
+  PgBossDefinedQueueRegistry,
+  PgBossQueueConfig,
   PgBossQueueDefinition,
+  PgBossQueueRegistry,
   PgBossScheduleDefinition,
   PgBossWorkerDefinition,
   PgBossWorkerDefinitionFactory,
@@ -11,6 +14,73 @@ import type {
 
 export function definePgBossQueue(definition: PgBossQueueDefinition): PgBossQueueDefinition {
   return definition
+}
+
+export function queue<Data extends object = object>(
+  definition: Omit<PgBossQueueConfig<Data>, '__data'> = {},
+): PgBossQueueConfig<Data> {
+  return definition
+}
+
+function shouldCreateQueue(definition: PgBossQueueConfig) {
+  return definition.create === true
+}
+
+function getQueueDefinition(
+  name: string,
+  definition: PgBossQueueConfig,
+): PgBossQueueDefinition | null {
+  if (!shouldCreateQueue(definition)) {
+    return null
+  }
+
+  return {
+    ...(definition.options ?? {}),
+    name,
+  }
+}
+
+function applyQueueDefinition<Definition extends object>(
+  name: string,
+  workerDefinition: Definition,
+): Omit<Definition, 'createQueue' | 'queue' | 'queueOptions'> & {
+  queue: string
+} {
+  const {
+    createQueue: _createQueue,
+    queue: _queue,
+    queueOptions: _queueOptions,
+    ...definition
+  } = workerDefinition as Definition & {
+    createQueue?: unknown
+    queue?: unknown
+    queueOptions?: unknown
+  }
+
+  return {
+    ...definition,
+    queue: name,
+  }
+}
+
+export function definePgBossQueues<const Registry extends PgBossQueueRegistry>(
+  registry: Registry,
+): PgBossDefinedQueueRegistry<Registry> {
+  const definitions = Object.entries(registry)
+    .map(([name, definition]) => getQueueDefinition(name, definition))
+    .filter((definition): definition is PgBossQueueDefinition => definition !== null)
+
+  return {
+    queues: registry,
+    definitions,
+    worker(name: string, definition: PgBossWorkerRegistration<any, any>) {
+      if (typeof definition === 'function') {
+        return (fastify: FastifyInstance) => applyQueueDefinition(name, definition(fastify))
+      }
+
+      return applyQueueDefinition(name, definition)
+    },
+  } as unknown as PgBossDefinedQueueRegistry<Registry>
 }
 
 export function definePgBossSchedule<Data extends object = object>(
