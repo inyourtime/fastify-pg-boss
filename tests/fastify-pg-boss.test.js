@@ -215,6 +215,63 @@ test('registers typed queue registries and registry workers', async (t) => {
   assert.deepEqual(jobs[0].data, { userId: 'user_123' })
 })
 
+test('registers typed queue registry worker factories', async (t) => {
+  const app = Fastify({ logger: false })
+  t.after(() => app.close())
+  const schema = createSchemaName()
+  const queueName = `${schema}/registry-factory-email`
+  const queues = definePgBossQueues({
+    [queueName]: queue({
+      create: true,
+      options: {
+        retryLimit: 6,
+      },
+    }),
+  })
+
+  let resolveProcessed
+  const processed = new Promise((resolve) => {
+    resolveProcessed = resolve
+  })
+
+  await app.register(fastifyPgBoss, {
+    constructorOptions: {
+      connectionString,
+      schema,
+    },
+    queueRegistry: queues,
+    workers: [
+      queues.worker(queueName, (workerApp) => {
+        assert.equal(workerApp, app)
+
+        return {
+          name: 'registry-factory-email-worker',
+          options: {
+            pollingIntervalSeconds: 0.5,
+          },
+          async handler(jobs) {
+            resolveProcessed(jobs)
+          },
+        }
+      }),
+    ],
+  })
+
+  const boss = getPgBoss(app)
+  const registeredQueue = await boss.getQueue(queueName)
+
+  assert.equal(registeredQueue?.name, queueName)
+  assert.equal(registeredQueue?.retryLimit, 6)
+
+  const jobId = await boss.send(queueName, { userId: 'user_factory' })
+  const jobs = await waitFor(processed, 10_000, 'registry worker factory did not process job')
+
+  assert.equal(typeof jobId, 'string')
+  assert.equal(jobs.length, 1)
+  assert.equal(jobs[0].name, queueName)
+  assert.deepEqual(jobs[0].data, { userId: 'user_factory' })
+})
+
 test('worker factories can access the fastify instance during registration', async (t) => {
   const app = Fastify({ logger: false })
   t.after(() => app.close())
