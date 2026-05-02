@@ -23,9 +23,9 @@ export function definePgBossWorker<ReqData extends object = object, ResData = an
   <const Definition extends PgBossWorkerDefinition<ReqData, ResData>>(
     definition: Definition,
   ): Definition
-  <const Factory extends PgBossWorkerDefinitionFactory<ReqData, ResData>>(
-    definition: Factory,
-  ): Factory
+  <const Definition extends PgBossWorkerDefinition<ReqData, ResData>>(
+    definition: (fastify: FastifyInstance) => Definition,
+  ): (fastify: FastifyInstance) => Definition
 }
 
 export function definePgBossWorker<ReqData extends object = object, ResData = any>(

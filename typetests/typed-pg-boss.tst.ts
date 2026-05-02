@@ -47,6 +47,17 @@ test('PgBossQueuesFromWorkers derives queue names and payloads from workers', ()
         expect(jobs[0]?.data.olderThanDays).type.toBe<number | undefined>()
       },
     }),
+    definePgBossWorker<EmailJob>()((workerApp) => {
+      expect(workerApp).type.toBe<FastifyInstance>()
+
+      return {
+        name: 'welcome-email-worker',
+        queue: 'email/welcome',
+        async handler(jobs) {
+          expect(jobs[0]?.data.userId).type.toBe<string | undefined>()
+        },
+      }
+    }),
   ] as const
 
   type Queues = PgBossQueuesFromWorkers<typeof workers>
@@ -54,6 +65,7 @@ test('PgBossQueuesFromWorkers derives queue names and payloads from workers', ()
   expect<Queues>().type.toBe<{
     'email/send': EmailJob
     cleanup: CleanupJob
+    'email/welcome': EmailJob
   }>()
 })
 
