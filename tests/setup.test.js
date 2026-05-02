@@ -103,6 +103,7 @@ test('definition helpers return the provided definitions', () => {
     existing: { create: false },
     noOptions: { create: true },
     queue: queueConfig,
+    registryName: { create: true, options: { name: 'optionsName', retryLimit: 3 } },
   })
 
   assert.equal(definePgBossQueue(queueDefinition), queueDefinition)
@@ -110,6 +111,7 @@ test('definition helpers return the provided definitions', () => {
   assert.deepEqual(queueRegistry.definitions, [
     { name: 'noOptions' },
     { name: 'queue', retryLimit: 1 },
+    { name: 'registryName', retryLimit: 3 },
   ])
   assert.deepEqual(queueRegistry.worker('existing', worker), {
     ...worker,

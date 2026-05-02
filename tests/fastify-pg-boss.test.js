@@ -215,6 +215,39 @@ test('registers typed queue registries and registry workers', async (t) => {
   assert.deepEqual(jobs[0].data, { userId: 'user_123' })
 })
 
+test('registry queue options cannot override registry queue names', async (t) => {
+  const app = Fastify({ logger: false })
+  t.after(() => app.close())
+  const schema = createSchemaName()
+  const queueName = `${schema}/registry-options-name`
+  const optionsQueueName = `${schema}/options-name-override`
+  const queues = definePgBossQueues({
+    [queueName]: queue({
+      create: true,
+      options: {
+        name: optionsQueueName,
+        retryLimit: 7,
+      },
+    }),
+  })
+
+  await app.register(fastifyPgBoss, {
+    constructorOptions: {
+      connectionString,
+      schema,
+    },
+    queueRegistry: queues,
+  })
+
+  const boss = getPgBoss(app)
+  const registeredQueue = await boss.getQueue(queueName)
+  const overriddenQueue = await boss.getQueue(optionsQueueName)
+
+  assert.equal(registeredQueue?.name, queueName)
+  assert.equal(registeredQueue?.retryLimit, 7)
+  assert.equal(overriddenQueue, null)
+})
+
 test('registers typed queue registry worker factories', async (t) => {
   const app = Fastify({ logger: false })
   t.after(() => app.close())

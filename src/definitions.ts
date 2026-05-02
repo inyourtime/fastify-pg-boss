@@ -35,8 +35,8 @@ function getQueueDefinition(
   }
 
   return {
-    name,
     ...(definition.options ?? {}),
+    name,
   }
 }
 
