@@ -2,9 +2,12 @@ import type { FastifyInstance } from 'fastify'
 import type { PgBoss, SendOptions } from 'pg-boss'
 import { expect, test } from 'tstyche'
 import {
+  definePgBossQueues,
   definePgBossWorker,
   getPgBoss,
+  type PgBossQueuesFromRegistry,
   type PgBossQueuesFromWorkers,
+  queue,
   type TypedPgBoss,
 } from '../src/index.js'
 
@@ -95,6 +98,62 @@ test('typed getPgBoss narrows send queue names and payloads', () => {
 
   // @ts-expect-error  Object literal may only specify known properties
   boss.send({ name: 'email/send', data: { olderThanDays: 30 } })
+})
+
+test('PgBossQueuesFromRegistry derives queue names and payloads from a queue registry', () => {
+  const queues = definePgBossQueues({
+    'email/send': queue<EmailJob>({ create: true }),
+    cleanup: queue<CleanupJob>({ create: false }),
+  })
+
+  const workers = [
+    queues.worker('email/send', {
+      name: 'email-worker',
+      async handler(jobs) {
+        expect(jobs[0]?.data.userId).type.toBe<string | undefined>()
+      },
+    }),
+    queues.worker('cleanup', (workerApp) => {
+      expect(workerApp).type.toBe<FastifyInstance>()
+
+      return {
+        name: 'cleanup-worker',
+        async handler(jobs) {
+          expect(jobs[0]?.data.olderThanDays).type.toBe<number | undefined>()
+        },
+      }
+    }),
+  ] as const
+
+  type Queues = PgBossQueuesFromRegistry<typeof queues>
+
+  expect<Queues>().type.toBe<{
+    'email/send': EmailJob
+    cleanup: CleanupJob
+  }>()
+  expect(workers[0].queue).type.toBe<'email/send'>()
+  expect(workers[1](app).queue).type.toBe<'cleanup'>()
+
+  // @ts-expect-error  Argument of type '"email/missing"' is not assignable to parameter
+  queues.worker('email/missing', {
+    name: 'missing-worker',
+    async handler() {},
+  })
+
+  queues.worker('email/send', {
+    name: 'invalid-email-worker',
+    async handler(jobs) {
+      // @ts-expect-error  Property 'olderThanDays' does not exist on type 'EmailJob'.
+      jobs[0]?.data.olderThanDays
+    },
+  })
+
+  // @ts-expect-error  No overload matches this call.
+  queues.worker('email/send', {
+    name: 'queue-override-worker',
+    queue: 'other',
+    async handler() {},
+  })
 })
 
 test('typed send accepts pg-boss SendOptions', () => {

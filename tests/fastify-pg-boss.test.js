@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import { before, test } from 'node:test'
 import Fastify from 'fastify'
-import fastifyPgBoss, { definePgBossWorker, getPgBoss } from '../dist/index.js'
+import fastifyPgBoss, {
+  definePgBossQueues,
+  definePgBossWorker,
+  getPgBoss,
+  queue,
+} from '../dist/index.js'
 import {
   assertDatabaseAvailable,
   connectionString,
@@ -155,6 +160,59 @@ test('registers worker queues, worker schedules, and processes jobs', async (t) 
   assert.equal(jobs.length, 1)
   assert.equal(jobs[0].name, queue)
   assert.deepEqual(jobs[0].data, { hello: 'world' })
+})
+
+test('registers typed queue registries and registry workers', async (t) => {
+  const app = Fastify({ logger: false })
+  t.after(() => app.close())
+  const schema = createSchemaName()
+  const queueName = `${schema}/registry-email`
+  const queues = definePgBossQueues({
+    [queueName]: queue({
+      create: true,
+      options: {
+        retryLimit: 4,
+      },
+    }),
+  })
+
+  let resolveProcessed
+  const processed = new Promise((resolve) => {
+    resolveProcessed = resolve
+  })
+
+  await app.register(fastifyPgBoss, {
+    constructorOptions: {
+      connectionString,
+      schema,
+    },
+    queueRegistry: queues,
+    workers: [
+      queues.worker(queueName, {
+        name: 'registry-email-worker',
+        options: {
+          pollingIntervalSeconds: 0.5,
+        },
+        async handler(jobs) {
+          resolveProcessed(jobs)
+        },
+      }),
+    ],
+  })
+
+  const boss = getPgBoss(app)
+  const registeredQueue = await boss.getQueue(queueName)
+
+  assert.equal(registeredQueue?.name, queueName)
+  assert.equal(registeredQueue?.retryLimit, 4)
+
+  const jobId = await boss.send(queueName, { userId: 'user_123' })
+  const jobs = await waitFor(processed, 10_000, 'registry worker did not process job')
+
+  assert.equal(typeof jobId, 'string')
+  assert.equal(jobs.length, 1)
+  assert.equal(jobs[0].name, queueName)
+  assert.deepEqual(jobs[0].data, { userId: 'user_123' })
 })
 
 test('worker factories can access the fastify instance during registration', async (t) => {

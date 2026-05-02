@@ -41,6 +41,116 @@ export type PgBossEventHandlers = {
 
 export type PgBossQueueDefinition = string | Queue
 
+export type PgBossQueueConfig<Data extends object = object> = {
+  /**
+   * Create this queue during plugin registration or worker registration.
+   * When false, the queue must already exist at runtime.
+   */
+  create?: boolean
+  /**
+   * Queue options used when create is true.
+   */
+  options?: Omit<Queue, 'name'>
+  /**
+   * Phantom field used only to carry the queue payload type.
+   */
+  readonly __data?: Data
+}
+
+export type PgBossQueueRegistry = Record<string, PgBossQueueConfig<any>>
+
+type PgBossRegistryQueueData<Definition> =
+  Definition extends PgBossQueueConfig<infer Data extends object> ? Data : never
+
+export type PgBossQueueRegistryWorkerDefinition<
+  Registry extends PgBossQueueRegistry,
+  QueueName extends keyof Registry & string,
+  ResData = any,
+  WorkerName extends string = string,
+> = {
+  createQueue?: never
+  enabled?: boolean
+  /**
+   * Human-readable worker name. The queue comes from the registry key.
+   */
+  name: WorkerName
+  offWorkOnClose?: boolean
+  offWorkOptions?: OffWorkOptions
+  queue?: never
+  schedule?: PgBossWorkerScheduleDefinition<PgBossRegistryQueueData<Registry[QueueName]>>
+  queueOptions?: never
+} & (
+  | {
+      includeMetadata?: false
+      handler: PgBossWorkHandler<PgBossRegistryQueueData<Registry[QueueName]>, ResData>
+      options?: WorkOptions
+    }
+  | {
+      includeMetadata: true
+      handler: PgBossWorkWithMetadataHandler<PgBossRegistryQueueData<Registry[QueueName]>, ResData>
+      options?: WorkOptions & { includeMetadata: true }
+    }
+)
+
+export type PgBossQueueRegistryWorker<
+  Registry extends PgBossQueueRegistry,
+  QueueName extends keyof Registry & string,
+  ResData = any,
+  WorkerName extends string = string,
+> = PgBossWorkerDefinition<
+  PgBossRegistryQueueData<Registry[QueueName]>,
+  ResData,
+  QueueName,
+  WorkerName
+> & {
+  queue: QueueName
+}
+
+export type PgBossQueueRegistryWorkerFactory<
+  Registry extends PgBossQueueRegistry,
+  QueueName extends keyof Registry & string,
+  ResData = any,
+  WorkerName extends string = string,
+> = (
+  fastify: FastifyInstance,
+) => PgBossQueueRegistryWorker<Registry, QueueName, ResData, WorkerName>
+
+export type PgBossDefinedQueueRegistry<Registry extends PgBossQueueRegistry> = {
+  readonly queues: Registry
+  readonly definitions: readonly PgBossQueueDefinition[]
+  worker: {
+    <
+      const QueueName extends keyof Registry & string,
+      WorkerName extends string = string,
+      ResData = any,
+    >(
+      name: QueueName,
+      definition: PgBossQueueRegistryWorkerDefinition<Registry, QueueName, ResData, WorkerName>,
+    ): PgBossQueueRegistryWorker<Registry, QueueName, ResData, WorkerName>
+    <
+      const QueueName extends keyof Registry & string,
+      WorkerName extends string = string,
+      ResData = any,
+    >(
+      name: QueueName,
+      definition: (
+        fastify: FastifyInstance,
+      ) => PgBossQueueRegistryWorkerDefinition<Registry, QueueName, ResData, WorkerName>,
+    ): PgBossQueueRegistryWorkerFactory<Registry, QueueName, ResData, WorkerName>
+  }
+}
+
+export type PgBossQueuesFromRegistry<Registry> =
+  Registry extends PgBossDefinedQueueRegistry<infer Definitions>
+    ? {
+        [QueueName in keyof Definitions & string]: PgBossRegistryQueueData<Definitions[QueueName]>
+      }
+    : Registry extends PgBossQueueRegistry
+      ? {
+          [QueueName in keyof Registry & string]: PgBossRegistryQueueData<Registry[QueueName]>
+        }
+      : never
+
 export type PgBossScheduleDefinition<Data extends object = object> = {
   data?: Data | null
   enabled?: boolean
@@ -245,6 +355,10 @@ export type FastifyPgBossOptions = {
    * Register queues before schedules and workers.
    */
   queues?: readonly PgBossQueueDefinition[]
+  /**
+   * Typed queue registry used to create queues and derive worker/send payload types.
+   */
+  queueRegistry?: PgBossDefinedQueueRegistry<any>
   /**
    * Register schedules before workers.
    */
