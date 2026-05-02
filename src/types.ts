@@ -244,15 +244,15 @@ export type FastifyPgBossOptions = {
   /**
    * Register queues before schedules and workers.
    */
-  queues?: PgBossQueueDefinition[]
+  queues?: readonly PgBossQueueDefinition[]
   /**
    * Register schedules before workers.
    */
-  schedules?: PgBossScheduleDefinition[]
+  schedules?: readonly PgBossScheduleDefinition[]
   /**
    * Register workers after queues and schedules.
    */
-  workers?: PgBossWorkerRegistration<any, any>[]
+  workers?: readonly PgBossWorkerRegistration<any, any>[]
   /**
    * Attach pg-boss event handlers. The default error handler logs errors.
    */
