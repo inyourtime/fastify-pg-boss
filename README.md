@@ -30,9 +30,10 @@ npm install fastify-pg-boss pg-boss
 ```ts
 import Fastify from 'fastify'
 import fastifyPgBoss, {
-  definePgBossWorker,
+  definePgBossQueues,
   getPgBoss,
-  type PgBossQueuesFromWorkers,
+  queue,
+  type PgBossQueuesFromRegistry,
 } from 'fastify-pg-boss'
 
 const app = Fastify({ logger: true })
@@ -41,11 +42,25 @@ type EmailJob = {
   userId: string
 }
 
+// Define every queue in one place. The generic type is the job payload for that
+// queue, and create: true tells the plugin to create the pg-boss queue at startup.
+const queues = definePgBossQueues({
+  'email/send': queue<EmailJob>({ create: true }),
+})
+
+// Build workers from the registry so the queue name and job payload stay linked.
 const workers = [
-  definePgBossWorker<EmailJob>()({
+  queues.worker('email/send', {
     name: 'email-worker',
-    queue: 'email/send',
-    createQueue: true,
+    // Optional: register a schedule for this worker's queue.
+    // schedule: {
+    //   cron: '0 9 * * *',
+    //   data: {
+    //     userId: 'daily-summary',
+    //   },
+    //   key: 'daily-summary-email',
+    //   tz: 'UTC',
+    // },
     options: {
       pollingIntervalSeconds: 10,
     },
@@ -57,13 +72,17 @@ const workers = [
   }),
 ] as const
 
-type Queues = PgBossQueuesFromWorkers<typeof workers>
+// Derive the typed queue map once and reuse it for typed sends.
+type Queues = PgBossQueuesFromRegistry<typeof queues>
 
 await app.register(fastifyPgBoss, {
   connectionString: process.env.POSTGRES_URL,
+  // Registers queues with create: true before schedules and workers.
+  queueRegistry: queues,
   workers,
 })
 
+// send() is narrowed to known queue names and their payload shapes.
 await getPgBoss<Queues>(app).send('email/send', {
   userId: 'user_123',
 })
@@ -150,20 +169,22 @@ await boss.send('queue-name', { ok: true })
 ```
 
 Use `getPgBoss<Queues>(app)` when you want TypeScript to narrow `send()` to your
-known queues. `PgBossQueuesFromWorkers` can derive that map from workers defined
-with the curried `definePgBossWorker<Data>()({...})` form, which preserves the
-literal queue names.
+known queues. `PgBossQueuesFromRegistry` derives that map from a typed queue
+registry, which keeps queue names and payloads in one place.
 
 ```ts
+const queues = definePgBossQueues({
+  'email/send': queue<EmailJob>({ create: true }),
+})
+
 const workers = [
-  definePgBossWorker<EmailJob>()({
+  queues.worker('email/send', {
     name: 'email-worker',
-    queue: 'email/send',
     async handler(jobs) {},
   }),
 ] as const
 
-type Queues = PgBossQueuesFromWorkers<typeof workers>
+type Queues = PgBossQueuesFromRegistry<typeof queues>
 
 const boss = getPgBoss<Queues>(app)
 await boss.send('email/send', { userId: 'user_123' })
@@ -171,20 +192,16 @@ await boss.send('email/send', { userId: 'user_123' })
 
 You can type `fastify.pgBoss` globally by augmenting the package's `PgBossQueues`
 interface. This changes the decorator type for every Fastify instance in the
-TypeScript program. The queue map can also be derived from your workers, so you
-do not need to repeat the payload shapes.
+TypeScript program. The queue map can be derived from your registry, so you do
+not need to repeat the payload shapes.
 
 ```ts
-const workers = [
-  definePgBossWorker<EmailJob>()({
-    name: 'email-worker',
-    queue: 'email/send',
-    async handler(jobs) {},
-  }),
-] as const
+const queues = definePgBossQueues({
+  'email/send': queue<EmailJob>({ create: true }),
+})
 
 declare module 'fastify-pg-boss' {
-  interface PgBossQueues extends PgBossQueuesFromWorkers<typeof workers> {}
+  interface PgBossQueues extends PgBossQueuesFromRegistry<typeof queues> {}
 }
 
 await app.pgBoss?.send('email/send', { userId: 'user_123' })
@@ -219,6 +236,122 @@ export const emailQueue = definePgBossQueue({
   name: 'email/send',
   retryLimit: 3,
 })
+```
+
+## Typed Queue Registries
+
+Use `definePgBossQueues` when you want a single source of truth for queue names,
+payload types, queue creation, typed `send()`, and typed workers.
+
+```ts
+import {
+  definePgBossQueues,
+  queue,
+  type PgBossQueuesFromRegistry,
+} from 'fastify-pg-boss'
+
+type EmailJob = {
+  userId: string
+}
+
+type CleanupJob = {
+  olderThanDays: number
+}
+
+export const queues = definePgBossQueues({
+  'email/send': queue<EmailJob>({
+    create: true,
+    options: {
+      retryLimit: 5,
+    },
+  }),
+  cleanup: queue<CleanupJob>({
+    create: false,
+  }),
+})
+
+export type Queues = PgBossQueuesFromRegistry<typeof queues>
+```
+
+`queue<Data>()` carries the job payload type for a queue. Its runtime options
+control queue creation:
+
+- `create: true` adds the queue to `queues.definitions`, so the plugin creates
+  it during registration when passed as `queueRegistry`.
+- `create: false` keeps the queue typed but does not create it. Use this when
+  the queue is created by migrations, another service, or other infrastructure.
+- `options` are passed to `boss.createQueue(name, options)` when `create` is
+  true.
+
+Pass the registry to the plugin with `queueRegistry`.
+
+```ts
+await app.register(fastifyPgBoss, {
+  connectionString: process.env.POSTGRES_URL,
+  queueRegistry: queues,
+})
+```
+
+The registry also creates workers bound to known queue names. The worker cannot
+override `queue`, `createQueue`, or `queueOptions`; those come from the registry.
+
+```ts
+export const workers = [
+  queues.worker('email/send', {
+    name: 'email-worker',
+    async handler(jobs) {
+      for (const job of jobs) {
+        job.data.userId
+      }
+    },
+  }),
+
+  queues.worker('cleanup', {
+    name: 'cleanup-worker',
+    async handler(jobs) {
+      for (const job of jobs) {
+        job.data.olderThanDays
+      }
+    },
+  }),
+] as const
+
+await app.register(fastifyPgBoss, {
+  connectionString: process.env.POSTGRES_URL,
+  queueRegistry: queues,
+  workers,
+})
+```
+
+Unknown queue names fail at compile time.
+
+```ts
+queues.worker('email/missing', {
+  name: 'missing-worker',
+  async handler() {},
+})
+```
+
+Worker factories work the same way and receive the Fastify instance during
+plugin registration.
+
+```ts
+export const emailWorker = queues.worker('email/send', (app) => ({
+  name: 'email-worker',
+  async handler(jobs) {
+    app.log.info({ count: jobs.length }, 'processing email jobs')
+  },
+}))
+```
+
+Use the derived queue map to type `getPgBoss` or the global `PgBossQueues`
+augmentation.
+
+```ts
+const boss = getPgBoss<Queues>(app)
+
+await boss.send('email/send', { userId: 'user_123' })
+await boss.send('cleanup', { olderThanDays: 30 })
 ```
 
 ## Schedules
@@ -262,7 +395,9 @@ definitions.
 ## Workers
 
 Workers are registered after queues and schedules. A worker uses `name` as its
-queue name unless `queue` is provided.
+queue name unless `queue` is provided. Prefer `queues.worker(name, definition)`
+when the worker belongs to a typed queue registry; it binds the queue name and
+payload type for you.
 
 ```ts
 import { definePgBossWorker } from 'fastify-pg-boss'
@@ -448,6 +583,7 @@ Set `logErrors: false` to disable the default error logger.
 | `stopOnClose` | Run worker `offWork` and `PgBoss.stop()` in Fastify `onClose`. Defaults to `true`. |
 | `stopOptions` | Options passed to `PgBoss.stop()`. |
 | `queues` | Queue names or pg-boss queue definitions to create before schedules and workers. |
+| `queueRegistry` | Typed queue registry from `definePgBossQueues`. Queues with `create: true` are created before schedules and workers. |
 | `schedules` | Schedule definitions to register before workers. |
 | `workers` | Worker definitions or worker factories to register after queues and schedules. |
 | `events` | Custom pg-boss event handlers. |
@@ -459,15 +595,19 @@ Set `logErrors: false` to disable the default error logger.
 export {
   fastifyPgBoss,
   definePgBossQueue,
+  definePgBossQueues,
   definePgBossSchedule,
   definePgBossWorker,
   getPgBoss,
+  queue,
 }
 ```
 
 The package also exports TypeScript types for plugin options, worker
-definitions, schedules, queues, events, and worker handlers. Import runtime
-pg-boss classes, helpers, and job types directly from `pg-boss`.
+definitions, schedules, queues, queue registries, events, and worker handlers.
+Use `PgBossQueuesFromRegistry` to derive a typed queue map from
+`definePgBossQueues`. Import runtime pg-boss classes, helpers, and job types
+directly from `pg-boss`.
 
 ## Development
 

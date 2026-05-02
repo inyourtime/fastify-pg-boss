@@ -24,7 +24,6 @@ export type {
   PgBossQueueRegistryWorkerFactory,
   PgBossQueues,
   PgBossQueuesFromRegistry,
-  PgBossQueuesFromWorkers,
   PgBossScheduleDefinition,
   PgBossTypedSend,
   PgBossTypedSendRequest,

@@ -245,49 +245,6 @@ export type PgBossWorkerRegistration<
   | PgBossWorkerDefinition<ReqData, ResData, QueueName, WorkerName>
   | PgBossWorkerDefinitionFactory<ReqData, ResData, QueueName, WorkerName>
 
-type Simplify<T> = {
-  [Key in keyof T]: T[Key]
-} & {}
-
-type UnionToIntersection<Union> = (Union extends unknown ? (value: Union) => void : never) extends (
-  value: infer Intersection,
-) => void
-  ? Intersection
-  : never
-
-type PgBossWorkerRequestData<Worker> =
-  Worker extends PgBossWorkerDefinition<infer ReqData, any, any, any>
-    ? ReqData
-    : Worker extends PgBossWorkerDefinitionFactory<infer ReqData, any, any, any>
-      ? ReqData
-      : Worker extends (fastify: FastifyInstance) => infer Definition
-        ? PgBossWorkerRequestData<Definition>
-        : never
-
-type PgBossWorkerQueueName<Worker> = Worker extends (fastify: FastifyInstance) => infer Definition
-  ? PgBossWorkerQueueName<Definition>
-  : Worker extends { queue: infer QueueName }
-    ? QueueName extends string
-      ? QueueName
-      : never
-    : Worker extends { name: infer WorkerName }
-      ? WorkerName extends string
-        ? WorkerName
-        : never
-      : never
-
-type PgBossQueueFromWorker<Worker> = Worker extends unknown
-  ? PgBossWorkerQueueName<Worker> extends infer QueueName extends string
-    ? {
-        [Name in QueueName]: PgBossWorkerRequestData<Worker>
-      }
-    : never
-  : never
-
-export type PgBossQueuesFromWorkers<Workers extends readonly unknown[]> = Simplify<
-  UnionToIntersection<PgBossQueueFromWorker<Workers[number]>>
->
-
 type PgBossQueueData<
   Queues extends object,
   QueueName extends keyof Queues & string,
